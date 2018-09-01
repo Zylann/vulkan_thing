@@ -1,0 +1,5 @@
+*.obj
+*.pdb
+*.dblite
+thirdparty/
+bin/
