@@ -2,7 +2,7 @@
 #define HEADER_STRING_H
 
 #include "vector.h"
-#include "math_funcs.h"
+#include "math/math_funcs.h"
 
 // Encapsulates a zero-terminated string inside a Vector structure
 class String : public Vector<Char, 20> {

@@ -1,10 +1,10 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include "vector4.h"
-#include "matrix4.h"
+#include "core/math/vector4.h"
+#include "core/math/matrix4.h"
 
-#include "console.h"
+#include "core/console.h"
 
 int main() {
     Console::print_line(L"Hello World");

@@ -29,6 +29,7 @@ env.Append(LIBS = [
 ])
 env.Append(CPPPATH = [
 	"thirdparty/glfw/include",
+	"."
 ])
 env.Append(CPPDEFINES = [
 	"GLFW_DLL"
@@ -82,7 +83,9 @@ def add_sources(sources, dir):
 		if f.endswith('.cpp') or f.endswith('.c'):
 			sources.append(dir + '/' + f)
 
-add_sources(sources, '.')
+add_sources(sources, 'core')
+add_sources(sources, 'core/math')
+add_sources(sources, 'game')
 
 #------------------------------------------------------------------------------
 program = env.Program(target=(output_folder + project_name), source=sources)

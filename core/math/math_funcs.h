@@ -2,7 +2,7 @@
 #define HEADER_MATH_FUNCS_H
 
 #include <cmath>
-#include "types.h"
+#include "../types.h"
 
 namespace Math {
 
