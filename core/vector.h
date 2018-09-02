@@ -2,21 +2,26 @@
 #define HEADER_VECTOR_H
 
 #include <cassert>
+#include <new> // For placement new
 #include "memory.h"
 #include "types.h"
+//#include <cstdio> // For debug print
 
 // Dynamic array with optional small-buffer optimization.
 // I didn't bother setting stack storage size in bytes, I find it simpler by element if you know what you are doing
-template <typename T, size_t SVO_SIZE = 16>
+template <typename T, size_t SBO_SIZE = 16>
 class Vector {
 public:
 
-    Vector() : m_heap_storage(nullptr), m_capacity(0), m_size(0) {
+    Vector(): m_heap_storage(nullptr), m_capacity(0), m_size(0) { }
+
+    Vector(const Vector &p_other): m_heap_storage(nullptr), m_capacity(0), m_size(0) {
+        copy(p_other);
     }
 
     template <size_t S>
-    Vector(const Vector<T, S> & p_other) {
-        *this = p_other;
+    Vector(const Vector<T, S> &p_other): m_heap_storage(nullptr), m_capacity(0), m_size(0) {
+        copy(p_other);
     }
 
     ~Vector() {
@@ -139,7 +144,7 @@ public:
 
                 T *d = data();
                 for (size_t i = m_size; i < p_size; ++i) {
-                    d[i].T(p_fill_value);
+                    new(&d[i]) T(p_fill_value);
                 }
             }
 
@@ -160,11 +165,12 @@ public:
 
     void hard_clear() {
         clear();
-        m_capacity = 0;
         if (is_using_heap()) {
+            assert(m_heap_storage != nullptr);
             memfree(m_heap_storage);
             m_heap_storage = nullptr;
         }
+        m_capacity = 0;
     }
 
     void reserve(size_t p_capacity) {
@@ -178,7 +184,7 @@ public:
     }
 
     inline bool is_using_heap() const {
-        return m_capacity >= SVO_SIZE;
+        return m_capacity >= SBO_SIZE;
     }
 
     void push_back(const T p_value) {
@@ -191,7 +197,8 @@ public:
 
         T *d = data();
 
-        d[m_size].T(p_value);
+        new(&d[m_size]) T(p_value);
+
         ++m_size;
     }
 
@@ -220,6 +227,39 @@ public:
         return d[m_size - 1];
     }
 
+    template <size_t S>
+    void copy(const Vector<T, S> &p_other) {
+
+        clear();
+
+        resize_no_init(p_other.size());
+
+        T *src = p_other.data();
+        T *dst = data();
+
+        for(size_t i = 0; i < p_other.size(); ++i) {
+            new(&dst[i]) T(src[i]);
+        }
+    }
+
+    // TODO Move semantics?
+    void grab(Vector &p_other) {
+        hard_clear();
+
+        // TODO Don't bother copying the stack storage when not needed
+
+        // Shallow-copy all members by value
+        m_heap_storage = p_other.m_heap_storage;
+        memcpy(m_stack_storage, p_other.m_stack_storage, SBO_SIZE * sizeof(T));
+        m_capacity = p_other.m_capacity;
+        m_size = p_other.m_size;
+
+        // Leave the other vector as empty
+        p_other.m_capacity = 0;
+        p_other.m_size = 0;
+        p_other.m_heap_storage = nullptr;
+    }
+
     const T & operator[](size_t p_index) const {
         assert(p_index < m_size);
         T *d = data();
@@ -232,35 +272,14 @@ public:
         return d[p_index];
     }
 
-    template <size_t S>
-    Vector<T, SVO_SIZE> & operator=(const Vector<T, S> &p_other) {
-
-        clear();
-
-        T *src = p_other.data();
-        T *dst = data();
-
-        for(size_t i = 0; i < p_other.size(); ++i) {
-            dst[i].T(src[i]);
-        }
+    void operator=(const Vector &p_other) {
+        copy(p_other);
     }
 
-    // TODO Move semantics?
-    void grab(Vector<T, SVO_SIZE> &p_other) {
-        hard_clear();
-
-        // TODO Don't bother copying the stack storage when not needed
-
-        // Shallow-copy all members by value
-        m_heap_storage = p_other.m_heap_storage;
-        memcpy(m_stack_storage, p_other.m_stack_storage, SVO_SIZE * sizeof(T));
-        m_capacity = p_other.m_capacity;
-        m_size = p_other.m_size;
-
-        // Leave the other vector as empty
-        p_other.m_capacity = 0;
-        p_other.m_size = 0;
-        p_other.m_heap_storage = nullptr;
+    // Copy vector with different SBO
+    template <size_t S>
+    void operator=(const Vector<T, S> &p_other) {
+        copy(p_other);
     }
 
 private:
@@ -269,9 +288,12 @@ private:
         // In the worst case, pointers to elements themselves will be invalid,
         // but you should expect that if you use a vector with items by value
 
+        // TODO Only resize capacity when using heap storage!
+        // Stack storage is cheap and fixed so we dont need to even handle capacity
+
         if (is_using_heap()) {
 
-            if (p_capacity <= SVO_SIZE) {
+            if (p_capacity <= SBO_SIZE) {
                 // Move to stack
                 // Be careful about the order since storages are in the same union type
                 T *d = m_heap_storage;
@@ -284,7 +306,7 @@ private:
 
         } else {
 
-            if (p_capacity > SVO_SIZE) {
+            if (p_capacity > SBO_SIZE) {
                 // Move to heap
                 T *d = static_cast<T*>(memalloc(p_capacity * sizeof(T)));
                 memcpy(d, m_stack_storage, m_capacity * sizeof(T));
@@ -297,7 +319,7 @@ private:
     }
 
     union {
-        uint8_t m_stack_storage[SVO_SIZE * sizeof(T)];
+        uint8_t m_stack_storage[SBO_SIZE * sizeof(T)];
         T *m_heap_storage;
     };
 

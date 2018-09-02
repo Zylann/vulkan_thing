@@ -1,3 +1,4 @@
+core/memory.cpp
 game/main.cpp
 core/math/box.h
 core/math/fov.h

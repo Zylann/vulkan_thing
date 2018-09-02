@@ -9,8 +9,7 @@
 /// \brief A 4x4 float matrix.
 /// Values are stored in row-major layout.
 /// Translations are stored in the last row.
-class Matrix4
-{
+class Matrix4 {
 public :
 
     /// \brief Constructs a matrix initialized to identity

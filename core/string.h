@@ -13,12 +13,13 @@ public:
     static size_t get_length(const Char *p_cstr);
 
     String() { }
+    //String(const String &other);
     String(const Char *p_cstr);
 
     String &String::operator+=(const Char *p_cstr);
     String &String::operator+=(const String &p_other);
 
-    void append_region(Char *p_cstr, size_t from, size_t len);
+    void append_region(const Char *p_cstr, size_t from, size_t len);
     void append_region(const String &p_str, size_t from, size_t len);
 
     // Length does not include '\0'
@@ -35,7 +36,7 @@ public:
 
 private:
     template <typename A>
-    static size_t _format(const Char *src, size_t src_len, String &dst, size_t from, A arg) {
+    static size_t _format_single(const Char *src, size_t src_len, String &dst, size_t from, A arg) {
 
         if(from >= src_len)
             return from;
@@ -43,7 +44,6 @@ private:
         size_t placeholder_pos = 0;
         if (find_not_escaped(src, src_len, L'%', placeholder_pos, from)) {
 
-            // TODO Appends zero if the placeholder is immediately at the start of the string
             dst.append_region(src, from, placeholder_pos);
             to_string(dst, arg);
 
@@ -53,9 +53,16 @@ private:
         return src_len;
     }
 
+    template <typename A>
+    static void _format(const Char *src, size_t src_len, String &dst, size_t from, A last_arg) {
+        size_t next = _format_single(src, src_len, dst, from, last_arg);
+        dst.append_region(src, next, src_len - next);
+    }
+
     template <typename A, typename... Args>
-    static size_t _format(const Char *src, size_t src_len, String &dst, size_t from, A arg, Args... args) {
-        return _format(src, src_len, dst, _format(src, src_len, dst, from, arg), args...);
+    static void _format(const Char *src, size_t src_len, String &dst, size_t from, A arg, Args... args) {
+        size_t next = _format_single(src, src_len, dst, from, arg);
+        _format(src, src_len, dst, next, args...);
     }
 
 public:

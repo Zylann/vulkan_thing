@@ -10,6 +10,8 @@ size_t String::get_length(const Char *p_cstr) {
     return len;
 }
 
+//String::String(const String &other): Vector(other) { }
+
 String::String(const Char *p_cstr) {
 
     size_t len = get_length(p_cstr);
@@ -44,7 +46,7 @@ String &String::operator+=(const String &p_other) {
     return *this;
 }
 
-void String::append_region(Char *p_cstr, size_t from, size_t len) {
+void String::append_region(const Char *p_cstr, size_t from, size_t len) {
 
     // TODO Check this only in debug
     assert(from + len <= get_length(p_cstr));
