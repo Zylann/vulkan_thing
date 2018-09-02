@@ -39,14 +39,14 @@ if platform == 'linux':
 
 	env.Append(CCFLAGS = ['-g','-O3', '-std=c++14'])
 	env.Append(LINKFLAGS = ['-Wl,-R,\'$$ORIGIN\''])
-    # TODO Linux setup
+	# TODO Linux setup
 
 elif platform == "osx":
 
-    platform_dir = 'osx'
-    env.Append(CCFLAGS = ['-g','-O3', '-arch', 'x86_64'])
-    env.Append(LINKFLAGS = ['-arch', 'x86_64'])
-    # TODO OSX setup
+	platform_dir = 'osx'
+	env.Append(CCFLAGS = ['-g','-O3', '-arch', 'x86_64'])
+	env.Append(LINKFLAGS = ['-arch', 'x86_64'])
+	# TODO OSX setup
 
 elif platform == 'windows':
 
