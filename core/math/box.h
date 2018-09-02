@@ -30,6 +30,6 @@ struct Box {
     bool contains(Vector3 p) {
         return contains(p.x, p.y, p.z);
     }
-}
+};
 
 #endif // HEADER_BOX_H

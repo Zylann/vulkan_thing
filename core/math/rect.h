@@ -28,7 +28,7 @@ struct Rect {
 	bool contains(Vector2 p) {
 		return contains(p.x, p.y);
 	}
-}
+};
 
 #endif
 
