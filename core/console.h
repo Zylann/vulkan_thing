@@ -6,8 +6,12 @@
 
 namespace Console {
 
-void print_raw(Char *p_cstr);
-void print_line(Char *p_cstr);
+void print_raw(const char *p_cstr);
+void print_raw(const Char *p_cstr);
+
+void print_line(const char *p_cstr);
+void print_line(const Char *p_cstr);
+
 void print_line(const String &s);
 
 void pause();

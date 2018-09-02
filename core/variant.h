@@ -25,7 +25,7 @@ public:
         bool bool_value;
         int64_t int_value;
         double float_value;
-        //String string_value; // TODO Non-POD in union!!
+        //String string_value; // TODO Non-POD in union, use a buffer for these
         TaggedPointer tagged_pointer_value;
     };
 

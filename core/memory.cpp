@@ -1,9 +1,10 @@
 #include "memory.h"
 //#include <cstdio> // For debug printf
+#include <atomic>
 
 namespace Memory {
 
-size_t g_alloc_count = 0;
+std::atomic<size_t> g_alloc_count = 0;
 
 void *alloc(size_t nbytes, const char *file, int line) {
 

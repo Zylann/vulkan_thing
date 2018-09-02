@@ -1,3 +1,5 @@
+game/window.cpp
+game/window.h
 core/memory.cpp
 game/main.cpp
 core/math/box.h

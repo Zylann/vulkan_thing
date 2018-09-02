@@ -4,11 +4,20 @@
 
 namespace Console {
 
-void print_raw(Char *p_cstr) {
+void print_raw(const char *p_cstr) {
+    fputs(p_cstr, stdout);
+}
+
+void print_raw(const Char *p_cstr) {
     fputws(p_cstr, stdout);
 }
 
-void print_line(Char *p_cstr) {
+void print_line(const char *p_cstr) {
+    fputs(p_cstr, stdout);
+    fputc('\n', stdout);
+}
+
+void print_line(const Char *p_cstr) {
     fputws(p_cstr, stdout);
     fputwc(L'\n', stdout);
 }
