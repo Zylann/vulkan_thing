@@ -3,6 +3,7 @@
 
 #include <GLFW/glfw3.h>
 #include "core/math/vector2.h"
+#include "core/vector.h"
 
 class Window {
 public:
@@ -13,7 +14,7 @@ public:
     bool should_close() const;
 
     static void poll_events();
-    static const char **get_required_vulkan_extensions(uint32_t &out_extension_count);
+    static void get_required_vulkan_extensions(Vector<const char*> &out_required_extensions);
 
     Vector2i get_size() const { return _size; }
 

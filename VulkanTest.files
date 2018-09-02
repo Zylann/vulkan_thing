@@ -1,3 +1,5 @@
+game/vulkan_instance.cpp
+game/vulkan_instance.h
 game/window.cpp
 game/window.h
 core/memory.cpp

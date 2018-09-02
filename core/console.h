@@ -14,6 +14,8 @@ void print_line(const Char *p_cstr);
 
 void print_line(const String &s);
 
+void print_line();
+
 void pause();
 
 } // namespace Console

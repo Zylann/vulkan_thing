@@ -26,6 +26,10 @@ void print_line(const String &s) {
     print_line(s.data());
 }
 
+void print_line() {
+    fputwc(L'\n', stdout);
+}
+
 void pause() {
     getchar();
 }

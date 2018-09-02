@@ -34,6 +34,12 @@ void Window::poll_events() {
     glfwPollEvents();
 }
 
-const char **Window::get_required_vulkan_extensions(uint32_t &out_extension_count) {
-    return glfwGetRequiredInstanceExtensions(&out_extension_count);
+void Window::get_required_vulkan_extensions(Vector<const char*> &out_required_extensions) {
+
+    uint32_t count = 0;
+    const char ** exts = glfwGetRequiredInstanceExtensions(&count);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        out_required_extensions.push_back(exts[i]);
+    }
 }
