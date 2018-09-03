@@ -2,7 +2,7 @@
 
 #include "window.h"
 #include "core/console.h"
-#include "vulkan_instance.h"
+#include "vulkan_driver.h"
 
 int main_loop();
 
@@ -27,8 +27,8 @@ int main_loop() {
     Window::get_required_vulkan_extensions(required_extensions);
     Vector<const char*> required_layers;
 
-    VulkanInstance vulkan_instance;
-    if(!vulkan_instance.create(app_name, required_extensions, required_layers)) {
+    VulkanDriver driver;
+    if (!driver.create(app_name, required_extensions, required_layers)) {
         return EXIT_FAILURE;
     }
 
