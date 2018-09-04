@@ -1,3 +1,4 @@
+core/log.cpp
 game/vulkan_driver.cpp
 game/vulkan_driver.h
 game/window.cpp

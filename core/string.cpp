@@ -1,14 +1,6 @@
 #include "string.h"
 
 // static
-size_t String::get_length(const Char *p_cstr) {
-
-    assert(p_cstr != nullptr);
-    size_t len = 0;
-    while (p_cstr[len] != 0)
-        ++len;
-    return len;
-}
 
 //String::String(const String &other): Vector(other) { }
 
@@ -19,6 +11,21 @@ String::String(const Char *p_cstr) {
     Char *d = data();
     d[len] = 0;
     memcpy(d, p_cstr, len * sizeof(Char));
+}
+
+String &String::operator+=(const char *p_cstr) {
+
+    size_t begin = length();
+    size_t len = get_length(p_cstr);
+    resize_no_init(begin + len + 1);
+    Char *d = data() + begin;
+    d[len] = 0;
+    // TODO Handle multibyte UTF-8
+    for(int i = 0; i < len; ++i) {
+        d[i] = p_cstr[i];
+    }
+
+    return *this;
 }
 
 String &String::operator+=(const Char *p_cstr) {

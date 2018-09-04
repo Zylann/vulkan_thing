@@ -1,5 +1,5 @@
 #include "vulkan_driver.h"
-#include "core/console.h"
+#include "core/log.h"
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
@@ -7,29 +7,32 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
     void *user_data) {
 
-    if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-        Console::print_raw("ERROR: ");
-
-    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        Console::print_raw("WARNING: ");
-
-    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-        Console::print_raw("INFO: ");
-    }
-
-    Console::print_raw("Vulkan: ");
+    String msg = L"Vulkan: ";
 
     if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) {
-        Console::print_raw("General: ");
+        msg += L"General: ";
     }
     if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
-        Console::print_raw("Performance: ");
+        msg += L"Performance: ";
     }
     if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) {
-        Console::print_raw("Validation: ");
+        msg += L"Validation: ";
     }
 
-    Console::print_line(callback_data->pMessage);
+    msg += callback_data->pMessage;
+
+    if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        Log::error(msg);
+
+    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        Log::warning(msg);
+
+    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+        Log::info(msg);
+
+    } else {
+        Log::info(msg);
+    }
 
     return VK_FALSE;
 }
@@ -75,14 +78,12 @@ bool VulkanDriver::create(
 
     Console::print_line("Required Vulkan extensions:");
     for(int i = 0; i < required_extensions.size(); ++i) {
-        Console::print_raw("\t");
-        Console::print_line(required_extensions[i]);
+        Console::print_line("\t", required_extensions[i]);
     }
     Console::print_line();
     Console::print_line("Required Vulkan layers:");
     for(int i = 0; i < required_layers.size(); ++i) {
-        Console::print_raw("\t");
-        Console::print_line(required_layers[i]);
+        Console::print_line("\t", required_layers[i]);
     }
     Console::print_line();
 
@@ -96,8 +97,7 @@ bool VulkanDriver::create(
 
         Console::print_line("Available Vulkan extensions:");
         for (int i = 0; i < extensions.size(); ++i) {
-            Console::print_raw(L"\t");
-            Console::print_line(extensions[i].extensionName);
+            Console::print_line(L"\t", extensions[i].extensionName);
         }
         Console::print_line();
 
@@ -109,8 +109,7 @@ bool VulkanDriver::create(
             }
 
             if (!found) {
-                Console::print_raw("ERROR: Required Vulkan extension is not available: ");
-                Console::print_line(required_extensions[i]);
+                Log::error("Required Vulkan extension is not available: ", required_extensions[i]);
                 return false;
             }
         }
@@ -127,8 +126,7 @@ bool VulkanDriver::create(
 
         Console::print_line("Available Vulkan layers:");
         for (int i = 0; i < available_layers.size(); ++i) {
-            Console::print_raw(L"\t");
-            Console::print_line(available_layers[i].layerName);
+            Console::print_line(L"\t", available_layers[i].layerName);
         }
         Console::print_line();
 
@@ -140,8 +138,7 @@ bool VulkanDriver::create(
             }
 
             if (!found) {
-                Console::print_raw("ERROR: Required Vulkan layer is not available: ");
-                Console::print_line(required_layers[i]);
+                Log::error(L"Required Vulkan layer is not available: ", required_layers[i]);
                 return false;
             }
         }
@@ -167,7 +164,7 @@ bool VulkanDriver::create(
 
         VkResult result = vkCreateInstance(&create_info, nullptr, &_instance);
         if (result != VK_SUCCESS) {
-            Console::print_line(String::format(L"ERROR: Failed to create Vulkan instance: result %", result));
+            Log::error(L"Failed to create Vulkan instance: result ", result);
             return false;
         }
     }
@@ -193,11 +190,11 @@ bool VulkanDriver::create(
         if (func != nullptr) {
             result = func(_instance, &create_info, nullptr, &_debug_messenger);
         } else {
-            Console::print_line("ERROR: Could not get function address");
+            Log::error("Could not get function address");
         }
 
         if (result != VK_SUCCESS) {
-            Console::print_line(String::format(L"ERROR: Failed to create Vulkan debug callback: result %", result));
+            Log::error(L"Failed to create Vulkan debug callback: result %", result);
             return false;
         }
     }
@@ -226,7 +223,7 @@ bool VulkanDriver::create(
         physical_devices.resize_no_init(physical_devices_count);
         vkEnumeratePhysicalDevices(_instance, &physical_devices_count, physical_devices.data());
 
-        Console::print_line(String::format(L"Found % Vulkan physical devices", physical_devices_count));
+        Log::info(L"Found", physical_devices_count, L" Vulkan physical devices");
 
         // Select device
         for (int i = 0; i < physical_devices.size(); ++i) {

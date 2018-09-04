@@ -10,12 +10,20 @@ public:
 
     static const Char ESCAPE_CHAR = L'\\';
 
-    static size_t get_length(const Char *p_cstr);
+    template <typename C>
+    static size_t get_length(const C *p_cstr) {
+        assert(p_cstr != nullptr);
+        size_t len = 0;
+        while (p_cstr[len] != 0)
+            ++len;
+        return len;
+    }
 
     String() { }
     //String(const String &other);
     String(const Char *p_cstr);
 
+    String &String::operator+=(const char *p_cstr);
     String &String::operator+=(const Char *p_cstr);
     String &String::operator+=(const String &p_other);
 
@@ -111,7 +119,7 @@ inline void to_string(String &dst, void *ptr) {
 template <typename T>
 String to_string(const T &x) {
     String s;
-    to_string(x, s);
+    to_string(s, x);
     return s;
 }
 

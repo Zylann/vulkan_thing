@@ -1,7 +1,7 @@
 #define GLFW_INCLUDE_VULKAN
 
 #include "window.h"
-#include "core/console.h"
+#include "core/log.h"
 #include "vulkan_driver.h"
 
 int main_loop();
@@ -12,7 +12,7 @@ int main() {
 
     int ret = main_loop();
 
-    Console::print_line(String::format(L"Alloc count on exit: %", Memory::get_alloc_count()));
+    Log::info(L"Alloc count on exit: ", Memory::get_alloc_count());
 
     return ret;
 }
