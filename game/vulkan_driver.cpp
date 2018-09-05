@@ -1,5 +1,6 @@
 #include "vulkan_driver.h"
 #include "core/log.h"
+#include "window.h"
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
@@ -42,6 +43,7 @@ VulkanDriver::VulkanDriver() {
     _debug_messenger = VK_NULL_HANDLE;
     _device = VK_NULL_HANDLE;
     _graphics_queue = VK_NULL_HANDLE;
+    _surface = VK_NULL_HANDLE;
 }
 
 VulkanDriver::~VulkanDriver() {
@@ -49,6 +51,10 @@ VulkanDriver::~VulkanDriver() {
 
         if(_device) {
             vkDestroyDevice(_device, nullptr);
+        }
+
+        if(_surface) {
+            vkDestroySurfaceKHR(_instance, _surface, nullptr);
         }
 
         if(_debug_messenger) {
@@ -62,10 +68,10 @@ VulkanDriver::~VulkanDriver() {
     }
 }
 
-bool VulkanDriver::create(
-    const char *app_name,
+bool VulkanDriver::create(const char *app_name,
     Vector<const char*> required_extensions,
-    Vector<const char*> required_layers) {
+    Vector<const char*> required_layers,
+    Window &window) {
 
 #if DEBUG
     // Check validation layers
@@ -194,17 +200,27 @@ bool VulkanDriver::create(
         }
 
         if (result != VK_SUCCESS) {
-            Log::error(L"Failed to create Vulkan debug callback: result %", result);
+            Log::error(L"Failed to create Vulkan debug callback: result ", result);
             return false;
         }
     }
 #endif
 
+    // Create main surface
+    {
+        VkResult result = window.create_vulkan_surface(_instance, nullptr, &_surface);
+        if(result != VK_SUCCESS) {
+            Log::error(L"Failed to create Vulkan surface: result ", result);
+            return false;
+        }
+    }
+
     struct QueueFamilyIndices {
         int graphics = -1;
+        int presentation = -1;
 
         bool is_complete() const {
-            return graphics != -1;
+            return graphics != -1 && presentation != -1;
         }
     };
 
@@ -216,14 +232,14 @@ bool VulkanDriver::create(
         uint32_t physical_devices_count = 0;
         vkEnumeratePhysicalDevices(_instance, &physical_devices_count, nullptr);
         if (physical_devices_count == 0) {
-            Console::print_line("ERROR: No Vulkan physical devices found");
+            Log::error("No Vulkan physical devices found");
             return false;
         }
         Vector<VkPhysicalDevice> physical_devices;
         physical_devices.resize_no_init(physical_devices_count);
         vkEnumeratePhysicalDevices(_instance, &physical_devices_count, physical_devices.data());
 
-        Log::info(L"Found", physical_devices_count, L" Vulkan physical devices");
+        Log::info(L"Found ", physical_devices_count, L" Vulkan physical devices");
 
         // Select device
         for (int i = 0; i < physical_devices.size(); ++i) {
@@ -249,8 +265,16 @@ bool VulkanDriver::create(
             for(int j = 0; j < queue_families.size(); ++j) {
                 const VkQueueFamilyProperties &family = queue_families[j];
 
+                // Graphics support
                 if (family.queueCount > 0 && family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                     indices.graphics = j;
+                }
+
+                // Presentation support
+                VkBool32 present_support = false;
+                vkGetPhysicalDeviceSurfaceSupportKHR(device, j, _surface, &present_support);
+                if(present_support) {
+                    indices.presentation = j;
                 }
 
                 if (indices.is_complete())
@@ -268,38 +292,51 @@ bool VulkanDriver::create(
         }
 
         if (!physical_device) {
-            Console::print_line("ERROR: No suitable Vulkan physical device");
+            Log::error("No suitable Vulkan physical device");
             return false;
         }
     }
 
     // Create logical device
     {
-        VkDeviceQueueCreateInfo queue_create_info = {};
-        queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queue_create_info.queueFamilyIndex = queue_family_indices.graphics;
-        queue_create_info.queueCount = 1;
+        Vector<int> unique_queue_indices;
+        unique_queue_indices.push_back(queue_family_indices.graphics);
+        if(!unique_queue_indices.contains(queue_family_indices.presentation))
+            unique_queue_indices.push_back(queue_family_indices.presentation);
+
         float queue_priority = 1.0f;
-        queue_create_info.pQueuePriorities = &queue_priority;
+        Vector<VkDeviceQueueCreateInfo> queue_create_infos;
+        for(int i = 0; i < unique_queue_indices.size(); ++i) {
+            int queue_index = unique_queue_indices[i];
+
+            VkDeviceQueueCreateInfo queue_create_info = {};
+            queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queue_create_info.queueFamilyIndex = queue_index;
+            queue_create_info.queueCount = 1;
+            queue_create_info.pQueuePriorities = &queue_priority;
+
+            queue_create_infos.push_back(queue_create_info);
+        }
 
         VkPhysicalDeviceFeatures device_features = {};
 
         VkDeviceCreateInfo create_info = {};
         create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        create_info.pQueueCreateInfos = &queue_create_info;
-        create_info.queueCreateInfoCount = 1;
+        create_info.pQueueCreateInfos = queue_create_infos.data();
+        create_info.queueCreateInfoCount = queue_create_infos.size();
         create_info.pEnabledFeatures = &device_features;
         create_info.enabledLayerCount = required_layers.size();
         create_info.ppEnabledLayerNames = required_layers.data();
 
         VkResult result = vkCreateDevice(physical_device, &create_info, nullptr, &_device);
         if (result != VK_SUCCESS) {
-            Console::print_line(String::format(L"ERROR: Failed to create Vulkan device: result %", result));
+            Log::error(L"Failed to create Vulkan device: result ", result);
             return false;
         }
     }
 
     vkGetDeviceQueue(_device, queue_family_indices.graphics, 0, &_graphics_queue);
+    vkGetDeviceQueue(_device, queue_family_indices.presentation, 0, &_present_queue);
 
     return true;
 }

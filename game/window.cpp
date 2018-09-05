@@ -26,6 +26,10 @@ Window::~Window() {
     }
 }
 
+VkResult Window::create_vulkan_surface(VkInstance vulkan_instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR *out_surface) const {
+    return glfwCreateWindowSurface(vulkan_instance, _window, allocator, out_surface);
+}
+
 bool Window::should_close() const {
     return glfwWindowShouldClose(_window);
 }

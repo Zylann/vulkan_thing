@@ -1,5 +1,3 @@
-#define GLFW_INCLUDE_VULKAN
-
 #include "window.h"
 #include "core/log.h"
 #include "vulkan_driver.h"
@@ -28,7 +26,7 @@ int main_loop() {
     Vector<const char*> required_layers;
 
     VulkanDriver driver;
-    if (!driver.create(app_name, required_extensions, required_layers)) {
+    if (!driver.create(app_name, required_extensions, required_layers, window)) {
         return EXIT_FAILURE;
     }
 
