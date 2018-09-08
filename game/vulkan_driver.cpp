@@ -38,16 +38,38 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
     return VK_FALSE;
 }
 
+static bool contains_all_extensions(const Vector<VkExtensionProperties> &extensions, const Vector<const char*> &expected_names, bool log_error=false) {
+    for(int j = 0; j < expected_names.size(); ++j) {
+        bool found = false;
+        for(int i = 0; i < extensions.size() && !found; ++i) {
+            found |= strcmp(extensions[i].extensionName, expected_names[j]) == 0;
+        }
+        if(!found) {
+            if(log_error)
+                Log::error("Required Vulkan extension was not found: ", expected_names[j]);
+            return false;
+        }
+    }
+    return true;
+}
+
 VulkanDriver::VulkanDriver() {
     _instance = VK_NULL_HANDLE;
     _debug_messenger = VK_NULL_HANDLE;
     _device = VK_NULL_HANDLE;
     _graphics_queue = VK_NULL_HANDLE;
     _surface = VK_NULL_HANDLE;
+    _swap_chain = VK_NULL_HANDLE;
+    _swap_chain_image_format = {};
+    _swap_chain_extent = {};
 }
 
 VulkanDriver::~VulkanDriver() {
     if(_instance) {
+
+        if(_swap_chain) {
+            vkDestroySwapchainKHR(_device, _swap_chain, nullptr);
+        }
 
         if(_device) {
             vkDestroyDevice(_device, nullptr);
@@ -107,17 +129,8 @@ bool VulkanDriver::create(const char *app_name,
         }
         Console::print_line();
 
-        for (int i = 0; i < required_extensions.size(); ++i) {
-
-            bool found = false;
-            for (int j = 0; j < extensions.size() && !found; ++j) {
-                found |= strcmp(required_extensions[i], extensions[j].extensionName) == 0;
-            }
-
-            if (!found) {
-                Log::error("Required Vulkan extension is not available: ", required_extensions[i]);
-                return false;
-            }
+        if(!contains_all_extensions(extensions, required_extensions, true)) {
+            return false;
         }
     }
 
@@ -224,9 +237,18 @@ bool VulkanDriver::create(const char *app_name,
         }
     };
 
+    struct SwapChainSupportDetails  {
+        VkSurfaceCapabilitiesKHR capabilities;
+        Vector<VkSurfaceFormatKHR> formats;
+        Vector<VkPresentModeKHR> modes;
+    };
+
     // Pick physical device
     QueueFamilyIndices queue_family_indices;
+    SwapChainSupportDetails swap_chain_support_details;
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+    Vector<const char*> required_device_extensions;
+    required_device_extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     {
         // Enumerate physical devices
         uint32_t physical_devices_count = 0;
@@ -286,7 +308,43 @@ bool VulkanDriver::create(const char *app_name,
                 continue;
             }
 
+            // Check device extensions
+            {
+                uint32_t device_extensions_count = 0;
+                vkEnumerateDeviceExtensionProperties(device, nullptr, &device_extensions_count, nullptr);
+                Vector<VkExtensionProperties> device_extensions;
+                device_extensions.resize_no_init(device_extensions_count);
+                vkEnumerateDeviceExtensionProperties(device, nullptr, &device_extensions_count, device_extensions.data());
+
+                if (!contains_all_extensions(device_extensions, required_device_extensions)) {
+                    // This device doesn't have all extensions we need
+                    continue;
+                }
+            }
+
+            // Check swap chain support
+            SwapChainSupportDetails details;
+            {
+                vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, _surface, &details.capabilities);
+
+                uint32_t formats_count = 0;
+                vkGetPhysicalDeviceSurfaceFormatsKHR(device, _surface, &formats_count, nullptr);
+                if(formats_count == 0)
+                    continue;
+                details.formats.resize_no_init(formats_count);
+                vkGetPhysicalDeviceSurfaceFormatsKHR(device, _surface, &formats_count, details.formats.data());
+
+                uint32_t modes_count = 0;
+                vkGetPhysicalDeviceSurfacePresentModesKHR(device, _surface, &modes_count, nullptr);
+                if(modes_count == 0)
+                    continue;
+                details.modes.resize_no_init(modes_count);
+                vkGetPhysicalDeviceSurfacePresentModesKHR(device, _surface, &modes_count, details.modes.data());
+            }
+
+            // Pick that device
             queue_family_indices = indices;
+            swap_chain_support_details = details;
             physical_device = physical_devices[i];
             break;
         }
@@ -327,6 +385,8 @@ bool VulkanDriver::create(const char *app_name,
         create_info.pEnabledFeatures = &device_features;
         create_info.enabledLayerCount = required_layers.size();
         create_info.ppEnabledLayerNames = required_layers.data();
+        create_info.enabledExtensionCount = static_cast<uint32_t>(required_device_extensions.size());
+        create_info.ppEnabledExtensionNames = required_device_extensions.data();
 
         VkResult result = vkCreateDevice(physical_device, &create_info, nullptr, &_device);
         if (result != VK_SUCCESS) {
@@ -337,6 +397,99 @@ bool VulkanDriver::create(const char *app_name,
 
     vkGetDeviceQueue(_device, queue_family_indices.graphics, 0, &_graphics_queue);
     vkGetDeviceQueue(_device, queue_family_indices.presentation, 0, &_present_queue);
+
+    // Create swap chain
+    {
+        // Format
+        VkSurfaceFormatKHR surface_format = {};
+        if (swap_chain_support_details.formats.size() == 1 && swap_chain_support_details.formats[0].format == VK_FORMAT_UNDEFINED) {
+            surface_format = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
+
+        } else {
+            for(int i = 0; i < swap_chain_support_details.formats.size(); ++i){
+                VkSurfaceFormatKHR f = swap_chain_support_details.formats[i];
+                if(f.format == VK_FORMAT_B8G8R8A8_UNORM && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                    surface_format = f;
+                    break;
+                }
+            }
+        }
+        if(surface_format.format == VK_FORMAT_UNDEFINED) {
+            Log::warning("Falling back on first found surface format");
+            surface_format = swap_chain_support_details.formats[0];
+        }
+
+        // Presentation mode
+        VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
+        for (int i = 0; i < swap_chain_support_details.modes.size(); ++i) {
+            VkPresentModeKHR m = swap_chain_support_details.modes[i];
+            if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
+                present_mode = m;
+                break;
+            } else if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+                present_mode = m;
+            }
+        }
+
+        // Swap extent
+        VkExtent2D extent = {};
+        if (swap_chain_support_details.capabilities.currentExtent.width != 0xffffffff) {
+            extent = swap_chain_support_details.capabilities.currentExtent;
+
+        } else {
+            Vector2i window_size = window.get_size();
+            const VkSurfaceCapabilitiesKHR &c = swap_chain_support_details.capabilities;
+            extent.width = Math::clamp(static_cast<uint32_t>(window_size.x), c.minImageExtent.width, c.maxImageExtent.width);
+            extent.height = Math::clamp(static_cast<uint32_t>(window_size.y), c.minImageExtent.height, c.maxImageExtent.height);
+        }
+
+        uint32_t image_count = swap_chain_support_details.capabilities.minImageCount + 1;
+        // 0 means no limit
+        if (swap_chain_support_details.capabilities.maxImageCount > 0 && image_count > swap_chain_support_details.capabilities.maxImageCount) {
+            image_count = swap_chain_support_details.capabilities.maxImageCount;
+        }
+
+        VkSwapchainCreateInfoKHR create_info = {};
+        create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        create_info.surface = _surface;
+        create_info.minImageCount = image_count;
+        create_info.imageFormat = surface_format.format;
+        create_info.imageColorSpace = surface_format.colorSpace;
+        //create_info.imageExtent = extent;
+        create_info.imageArrayLayers = 1;
+        create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // Note: use TRANSFERT_DST if we do post-processing
+
+        uint32_t indices[] = {(uint32_t) queue_family_indices.graphics, (uint32_t) queue_family_indices.presentation};
+        if (queue_family_indices.graphics != queue_family_indices.presentation) {
+            create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            create_info.queueFamilyIndexCount = 2;
+            create_info.pQueueFamilyIndices = indices;
+        } else {
+            // Preferred, more performant
+            create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            create_info.queueFamilyIndexCount = 0; // Optional
+            create_info.pQueueFamilyIndices = nullptr; // Optional
+        }
+
+        create_info.preTransform = swap_chain_support_details.capabilities.currentTransform;
+        create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // Window is not transparent
+        create_info.presentMode = present_mode;
+        create_info.clipped = VK_TRUE; // Don't care about pixels behind other windows
+        create_info.oldSwapchain = VK_NULL_HANDLE;
+
+        VkResult result = vkCreateSwapchainKHR(_device, &create_info, nullptr, &_swap_chain);
+        if (result != VK_SUCCESS) {
+            Log::error("Could not create Vulkan swap chain, result: ", result);
+            return false;
+        }
+
+        vkGetSwapchainImagesKHR(_device, _swap_chain, &image_count, nullptr);
+        _swap_chain_images.resize_no_init(image_count);
+        vkGetSwapchainImagesKHR(_device, _swap_chain, &image_count, _swap_chain_images.data());
+
+        _swap_chain_image_format = surface_format.format;
+        _swap_chain_extent = extent;
+    }
 
     return true;
 }

@@ -22,7 +22,13 @@ private:
     VkDevice _device;
     VkQueue _graphics_queue;
     VkQueue _present_queue;
+
     VkSurfaceKHR _surface;
+
+    VkSwapchainKHR _swap_chain;
+    Vector<VkImage> _swap_chain_images;
+    VkFormat _swap_chain_image_format;
+    VkExtent2D _swap_chain_extent;
 };
 
 #endif // HEADER_VULKAN_DRIVER_H

@@ -97,6 +97,20 @@ inline const T & clamp(const T & x, const T & min, const T & max) {
     return x;
 }
 
+template <typename T>
+inline const T min(const T a, const T b) {
+    if(a < b)
+        return a;
+    return b;
+}
+
+template <typename T>
+inline const T max(const T a, const T b) {
+    if(a > b)
+        return a;
+    return b;
+}
+
 } // namespace Math
 
 #endif // HEADER_MATH_FUNCS_H
