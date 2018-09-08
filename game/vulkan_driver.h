@@ -27,6 +27,7 @@ private:
 
     VkSwapchainKHR _swap_chain;
     Vector<VkImage> _swap_chain_images;
+    Vector<VkImageView> _swap_chain_image_views;
     VkFormat _swap_chain_image_format;
     VkExtent2D _swap_chain_extent;
 };

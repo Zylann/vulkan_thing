@@ -67,6 +67,13 @@ VulkanDriver::VulkanDriver() {
 VulkanDriver::~VulkanDriver() {
     if(_instance) {
 
+        for (int i = 0; i < _swap_chain_image_views.size(); ++i) {
+            VkImageView view = _swap_chain_image_views[i];
+            if(view) {
+                vkDestroyImageView(_device, view, nullptr);
+            }
+        }
+
         if(_swap_chain) {
             vkDestroySwapchainKHR(_device, _swap_chain, nullptr);
         }
@@ -449,38 +456,40 @@ bool VulkanDriver::create(const char *app_name,
             image_count = swap_chain_support_details.capabilities.maxImageCount;
         }
 
-        VkSwapchainCreateInfoKHR create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        create_info.surface = _surface;
-        create_info.minImageCount = image_count;
-        create_info.imageFormat = surface_format.format;
-        create_info.imageColorSpace = surface_format.colorSpace;
-        //create_info.imageExtent = extent;
-        create_info.imageArrayLayers = 1;
-        create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // Note: use TRANSFERT_DST if we do post-processing
+        {
+            VkSwapchainCreateInfoKHR create_info = {};
+            create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+            create_info.surface = _surface;
+            create_info.minImageCount = image_count;
+            create_info.imageFormat = surface_format.format;
+            create_info.imageColorSpace = surface_format.colorSpace;
+            create_info.imageExtent = extent;
+            create_info.imageArrayLayers = 1;
+            create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // Note: use TRANSFERT_DST if we do post-processing
 
-        uint32_t indices[] = {(uint32_t) queue_family_indices.graphics, (uint32_t) queue_family_indices.presentation};
-        if (queue_family_indices.graphics != queue_family_indices.presentation) {
-            create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-            create_info.queueFamilyIndexCount = 2;
-            create_info.pQueueFamilyIndices = indices;
-        } else {
-            // Preferred, more performant
-            create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            create_info.queueFamilyIndexCount = 0; // Optional
-            create_info.pQueueFamilyIndices = nullptr; // Optional
-        }
+            uint32_t indices[] = {(uint32_t) queue_family_indices.graphics, (uint32_t) queue_family_indices.presentation};
+            if (queue_family_indices.graphics != queue_family_indices.presentation) {
+                create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+                create_info.queueFamilyIndexCount = 2;
+                create_info.pQueueFamilyIndices = indices;
+            } else {
+                // Preferred, more performant
+                create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+                create_info.queueFamilyIndexCount = 0; // Optional
+                create_info.pQueueFamilyIndices = nullptr; // Optional
+            }
 
-        create_info.preTransform = swap_chain_support_details.capabilities.currentTransform;
-        create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // Window is not transparent
-        create_info.presentMode = present_mode;
-        create_info.clipped = VK_TRUE; // Don't care about pixels behind other windows
-        create_info.oldSwapchain = VK_NULL_HANDLE;
+            create_info.preTransform = swap_chain_support_details.capabilities.currentTransform;
+            create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // Window is not transparent
+            create_info.presentMode = present_mode;
+            create_info.clipped = VK_TRUE; // Don't care about pixels behind other windows
+            create_info.oldSwapchain = VK_NULL_HANDLE;
 
-        VkResult result = vkCreateSwapchainKHR(_device, &create_info, nullptr, &_swap_chain);
-        if (result != VK_SUCCESS) {
-            Log::error("Could not create Vulkan swap chain, result: ", result);
-            return false;
+            VkResult result = vkCreateSwapchainKHR(_device, &create_info, nullptr, &_swap_chain);
+            if (result != VK_SUCCESS) {
+                Log::error("Could not create Vulkan swap chain, result: ", result);
+                return false;
+            }
         }
 
         vkGetSwapchainImagesKHR(_device, _swap_chain, &image_count, nullptr);
@@ -489,6 +498,36 @@ bool VulkanDriver::create(const char *app_name,
 
         _swap_chain_image_format = surface_format.format;
         _swap_chain_extent = extent;
+
+        _swap_chain_image_views.resize(_swap_chain_images.size(), VK_NULL_HANDLE);
+        for(int i = 0; i < _swap_chain_image_views.size(); ++i) {
+
+            VkImageViewCreateInfo create_info = {};
+            create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            create_info.image = _swap_chain_images[i];
+            create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            create_info.format = _swap_chain_image_format;
+            create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+            create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            create_info.subresourceRange.baseMipLevel = 0;
+            create_info.subresourceRange.levelCount = 1;
+            create_info.subresourceRange.baseArrayLayer = 0;
+            create_info.subresourceRange.layerCount = 1;
+
+            VkResult result = vkCreateImageView(_device, &create_info, nullptr, &_swap_chain_image_views[i]);
+            if (result != VK_SUCCESS) {
+                Log::error("Failed to create Vulkan swap chain image view, result: ", result);
+                return false;
+            }
+        }
+    }
+
+    // Create pipeline
+    {
+
     }
 
     return true;
