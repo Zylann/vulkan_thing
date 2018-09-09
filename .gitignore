@@ -3,3 +3,4 @@
 *.dblite
 thirdparty/
 bin/
+*.spv

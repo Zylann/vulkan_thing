@@ -260,6 +260,16 @@ public:
         p_other.m_heap_storage = nullptr;
     }
 
+    // LAZY
+    void align(size_t block_size_bytes, const T fill_value) {
+        assert(block_size_bytes >= sizeof(T));
+        assert(block_size_bytes % sizeof(T) == 0);
+        size_t m = (size() * sizeof(T)) % block_size_bytes;
+        if (m != 0) {
+            resize(size() + (block_size_bytes - m) / sizeof(T), fill_value);
+        }
+    }
+
     const T & operator[](size_t p_index) const {
         assert(p_index < m_size);
         T *d = data();

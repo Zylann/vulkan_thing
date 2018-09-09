@@ -1,3 +1,5 @@
+core/file.cpp
+core/file.h
 core/log.cpp
 game/vulkan_driver.cpp
 game/vulkan_driver.h

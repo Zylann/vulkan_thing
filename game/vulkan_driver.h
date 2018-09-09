@@ -30,6 +30,8 @@ private:
     Vector<VkImageView> _swap_chain_image_views;
     VkFormat _swap_chain_image_format;
     VkExtent2D _swap_chain_extent;
+
+    VkPipelineLayout _pipeline_layout;
 };
 
 #endif // HEADER_VULKAN_DRIVER_H
