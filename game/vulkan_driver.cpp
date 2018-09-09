@@ -55,22 +55,35 @@ static bool contains_all_extensions(const Vector<VkExtensionProperties> &extensi
 }
 
 VulkanDriver::VulkanDriver() {
+
     _instance = VK_NULL_HANDLE;
     _debug_messenger = VK_NULL_HANDLE;
     _device = VK_NULL_HANDLE;
     _graphics_queue = VK_NULL_HANDLE;
     _surface = VK_NULL_HANDLE;
+
     _swap_chain = VK_NULL_HANDLE;
     _swap_chain_image_format = {};
     _swap_chain_extent = {};
+
+    _render_pass = VK_NULL_HANDLE;
     _pipeline_layout = VK_NULL_HANDLE;
+    _graphics_pipeline = VK_NULL_HANDLE;
 }
 
 VulkanDriver::~VulkanDriver() {
     if(_instance) {
 
+        if(_graphics_pipeline) {
+            vkDestroyPipeline(_device, _graphics_pipeline, nullptr);
+        }
+
         if(_pipeline_layout) {
             vkDestroyPipelineLayout(_device, _pipeline_layout, nullptr);
+        }
+
+        if (_render_pass) {
+            vkDestroyRenderPass(_device, _render_pass, nullptr);
         }
 
         for (int i = 0; i < _swap_chain_image_views.size(); ++i) {
@@ -531,6 +544,46 @@ bool VulkanDriver::create(const char *app_name,
         }
     }
 
+    // Create render pass
+    {
+        VkAttachmentDescription color_attachment = {};
+        color_attachment.format = _swap_chain_image_format;
+        color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        // Applies to color and depth
+        color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        // Not using stencil for now
+        color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        // Layout for presentation
+        color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        VkAttachmentReference color_attachment_ref = {};
+        color_attachment_ref.attachment = 0;
+        color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass = {};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        // The index of the attachment in this array is directly referenced from
+        // the fragment shader with the layout(location = 0) out vec4 outColor directive!
+        subpass.pColorAttachments = &color_attachment_ref;
+
+        VkRenderPassCreateInfo create_info = {};
+        create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        create_info.attachmentCount = 1;
+        create_info.pAttachments = &color_attachment;
+        create_info.subpassCount = 1;
+        create_info.pSubpasses = &subpass;
+
+        VkResult result = vkCreateRenderPass(_device, &create_info, nullptr, &_render_pass);
+        if (result != VK_SUCCESS) {
+            Log::error("Could not create render pass: ", result);
+            return false;
+        }
+    }
+
     // Create pipeline
     {
         // Shader stages
@@ -542,7 +595,7 @@ bool VulkanDriver::create(const char *app_name,
             Log::error("Failed to read vertex shader");
             return false;
         }
-        if (!File::read_all_bytes("default.vert.spv", frag_shader_code)) {
+        if (!File::read_all_bytes("default.frag.spv", frag_shader_code)) {
             Log::error("Failed to read fragment shader");
             return false;
         }
@@ -576,6 +629,19 @@ bool VulkanDriver::create(const char *app_name,
                 return false;
             }
         }
+
+        struct AutoDestroyShaderModule {
+
+            VkDevice device;
+            VkShaderModule shader_module;
+
+            ~AutoDestroyShaderModule() {
+                vkDestroyShaderModule(device, shader_module, nullptr);
+            }
+        };
+
+        AutoDestroyShaderModule auto_destroy_vert_shader_module = { _device, vert_shader_module };
+        AutoDestroyShaderModule auto_destroy_frag_shader_module = { _device, frag_shader_module };
 
         VkPipelineShaderStageCreateInfo vert_shader_stage_info = {};
         vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -679,14 +745,14 @@ bool VulkanDriver::create(const char *app_name,
         color_blending.blendConstants[2] = 0.0f; // Optional
         color_blending.blendConstants[3] = 0.0f; // Optional
 
-        VkDynamicState dynamic_states[] = {
-            VK_DYNAMIC_STATE_VIEWPORT
-        };
+//        VkDynamicState dynamic_states[] = {
+//            VK_DYNAMIC_STATE_VIEWPORT
+//        };
 
-        VkPipelineDynamicStateCreateInfo dynamic_state = {};
-        dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dynamic_state.dynamicStateCount = 1;
-        dynamic_state.pDynamicStates = dynamic_states;
+//        VkPipelineDynamicStateCreateInfo dynamic_state = {};
+//        dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+//        dynamic_state.dynamicStateCount = 1;
+//        dynamic_state.pDynamicStates = dynamic_states;
 
         // Pipeline layout
         {
@@ -704,10 +770,36 @@ bool VulkanDriver::create(const char *app_name,
             }
         }
 
+        {
+            VkGraphicsPipelineCreateInfo create_info = {};
+            create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+            create_info.stageCount = 2;
+            create_info.pStages = shader_stages;
+            create_info.pVertexInputState = &vertex_input_info;
+            create_info.pInputAssemblyState = &input_assembly;
+            create_info.pViewportState = &viewport_state;
+            create_info.pRasterizationState = &rasterizer;
+            create_info.pMultisampleState = &multisampling;
+            create_info.pDepthStencilState = nullptr; // Optional
+            create_info.pColorBlendState = &color_blending;
+            create_info.pDynamicState = nullptr; // Optional
+            create_info.layout = _pipeline_layout;
+            create_info.renderPass = _render_pass;
+            create_info.subpass = 0;
+            create_info.basePipelineHandle = VK_NULL_HANDLE; // Optional
+            create_info.basePipelineIndex = -1; // Optional
+
+            VkResult result = vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &create_info, nullptr, &_graphics_pipeline);
+            if (result != VK_SUCCESS) {
+                Log::error("Could not create graphics pipeline, result: ", result);
+                return false;
+            }
+        }
+
         //...
 
-        vkDestroyShaderModule(_device, vert_shader_module, nullptr);
-        vkDestroyShaderModule(_device, frag_shader_module, nullptr);
+//        vkDestroyShaderModule(_device, vert_shader_module, nullptr);
+//        vkDestroyShaderModule(_device, frag_shader_module, nullptr);
     }
 
     return true;

@@ -31,7 +31,9 @@ private:
     VkFormat _swap_chain_image_format;
     VkExtent2D _swap_chain_extent;
 
+    VkRenderPass _render_pass;
     VkPipelineLayout _pipeline_layout;
+    VkPipeline _graphics_pipeline;
 };
 
 #endif // HEADER_VULKAN_DRIVER_H
