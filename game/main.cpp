@@ -32,7 +32,10 @@ int main_loop() {
 
     while (!window.should_close()) {
         Window::poll_events();
+        driver.draw();
     }
+
+    driver.wait();
 
     return EXIT_SUCCESS;
 }

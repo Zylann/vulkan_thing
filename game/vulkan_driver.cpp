@@ -3,6 +3,15 @@
 #include "core/file.h"
 #include "window.h"
 
+/*#define CHECK_RESULT_V(f, v) \
+{ \
+    VkResult result = f; \
+    if (result != VK_SUCCESS) { \
+        Log::error(__FILE__, ": ", __LINE__, ": Vulkan call failed with result ", result); \
+        return v; \
+    } \
+}*/
+
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
     VkDebugUtilsMessageTypeFlagsEXT message_type,
@@ -54,6 +63,21 @@ static bool contains_all_extensions(const Vector<VkExtensionProperties> &extensi
     return true;
 }
 
+static VkSemaphore create_semaphore(VkDevice device) {
+    VkSemaphore semaphore = VK_NULL_HANDLE;
+
+    VkSemaphoreCreateInfo create_info = {};
+    create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkResult result = vkCreateSemaphore(device, &create_info, nullptr, &semaphore);
+    if(result != VK_SUCCESS) {
+        Log::error("Failed to create semaphore, result: ", result);
+        return VK_NULL_HANDLE;
+    }
+
+    return semaphore;
+}
+
 VulkanDriver::VulkanDriver() {
 
     _instance = VK_NULL_HANDLE;
@@ -69,10 +93,19 @@ VulkanDriver::VulkanDriver() {
     _render_pass = VK_NULL_HANDLE;
     _pipeline_layout = VK_NULL_HANDLE;
     _graphics_pipeline = VK_NULL_HANDLE;
+
+    _command_pool = VK_NULL_HANDLE;
+
+    _image_available_semaphore = VK_NULL_HANDLE;
+    _render_finished_semaphore = VK_NULL_HANDLE;
 }
 
 VulkanDriver::~VulkanDriver() {
     if(_instance) {
+
+        if(_command_pool) {
+            vkDestroyCommandPool(_device, _command_pool, nullptr);
+        }
 
         if(_graphics_pipeline) {
             vkDestroyPipeline(_device, _graphics_pipeline, nullptr);
@@ -80,6 +113,13 @@ VulkanDriver::~VulkanDriver() {
 
         if(_pipeline_layout) {
             vkDestroyPipelineLayout(_device, _pipeline_layout, nullptr);
+        }
+
+        for(int i = 0; i < _swap_chain_framebuffers.size(); ++i) {
+            VkFramebuffer fb = _swap_chain_framebuffers[i];
+            if(fb) {
+                vkDestroyFramebuffer(_device, fb, nullptr);
+            }
         }
 
         if (_render_pass) {
@@ -95,6 +135,13 @@ VulkanDriver::~VulkanDriver() {
 
         if(_swap_chain) {
             vkDestroySwapchainKHR(_device, _swap_chain, nullptr);
+        }
+
+        if(_render_finished_semaphore) {
+            vkDestroySemaphore(_device, _render_finished_semaphore, nullptr);
+        }
+        if(_image_available_semaphore) {
+            vkDestroySemaphore(_device, _image_available_semaphore, nullptr);
         }
 
         if(_device) {
@@ -570,12 +617,24 @@ bool VulkanDriver::create(const char *app_name,
         // the fragment shader with the layout(location = 0) out vec4 outColor directive!
         subpass.pColorAttachments = &color_attachment_ref;
 
+        // We need to wait for the swap chain to finish reading from the image before we can access it.
+        // This can be accomplished by waiting on the color attachment output stage itself.
+        VkSubpassDependency dependency = {};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
         VkRenderPassCreateInfo create_info = {};
         create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
         create_info.attachmentCount = 1;
         create_info.pAttachments = &color_attachment;
         create_info.subpassCount = 1;
         create_info.pSubpasses = &subpass;
+        create_info.dependencyCount = 1;
+        create_info.pDependencies = &dependency;
 
         VkResult result = vkCreateRenderPass(_device, &create_info, nullptr, &_render_pass);
         if (result != VK_SUCCESS) {
@@ -802,9 +861,170 @@ bool VulkanDriver::create(const char *app_name,
 //        vkDestroyShaderModule(_device, frag_shader_module, nullptr);
     }
 
+    // Framebuffers
+    {
+        _swap_chain_framebuffers.resize(_swap_chain_images.size(), VK_NULL_HANDLE);
+
+        for (size_t i = 0; i < _swap_chain_images.size(); ++i) {
+
+            VkImageView attachments[] = {
+                _swap_chain_image_views[i]
+            };
+
+            VkFramebufferCreateInfo create_info = {};
+            create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            create_info.renderPass = _render_pass;
+            create_info.attachmentCount = 1;
+            create_info.pAttachments = attachments;
+            create_info.width = _swap_chain_extent.width;
+            create_info.height = _swap_chain_extent.height;
+            create_info.layers = 1;
+
+            VkResult result = vkCreateFramebuffer(_device, &create_info, nullptr, &_swap_chain_framebuffers[i]);
+            if (result != VK_SUCCESS) {
+                Log::error("Failed to create framebuffer, result: ", result);
+                return false;
+            }
+        }
+    }
+
+    // Command buffers
+    {
+        VkCommandPoolCreateInfo create_info = {};
+        create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        create_info.queueFamilyIndex = queue_family_indices.graphics;
+        create_info.flags = 0; // Optional
+
+        VkResult result = vkCreateCommandPool(_device, &create_info, nullptr, &_command_pool);
+        if (result != VK_SUCCESS) {
+            Log::error("Could not create command pool, result: ", result);
+            return false;
+        }
+    }
+    {
+        _command_buffers.resize(_swap_chain_framebuffers.size(), VK_NULL_HANDLE);
+
+        VkCommandBufferAllocateInfo alloc_info = {};
+        alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        alloc_info.commandPool = _command_pool;
+        alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        alloc_info.commandBufferCount = (uint32_t) _command_buffers.size();
+
+        VkResult result = vkAllocateCommandBuffers(_device, &alloc_info, _command_buffers.data());
+        if (result != VK_SUCCESS) {
+            Log::error("Could not allocate command buffers, result: ", result);
+            return false;
+        }
+    }
+    for (size_t i = 0; i < _command_buffers.size(); ++i) {
+
+        VkCommandBuffer command_buffer = _command_buffers[i];
+
+        VkCommandBufferBeginInfo begin_info = {};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin_info.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        begin_info.pInheritanceInfo = nullptr; // Optional
+
+        {
+            VkResult result = vkBeginCommandBuffer(command_buffer, &begin_info);
+            if (result != VK_SUCCESS) {
+                Log::error("Failed to start recording command buffer, result: ", result);
+                return false;
+            }
+        }
+
+        VkRenderPassBeginInfo pass_info = {};
+        pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        pass_info.renderPass = _render_pass;
+        pass_info.framebuffer = _swap_chain_framebuffers[i];
+        pass_info.renderArea.offset = {0, 0};
+        pass_info.renderArea.extent = _swap_chain_extent;
+        VkClearValue clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
+        pass_info.clearValueCount = 1;
+        pass_info.pClearValues = &clear_color;
+
+        vkCmdBeginRenderPass(command_buffer, &pass_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _graphics_pipeline);
+        vkCmdDraw(command_buffer, 3, 1, 0, 0);
+        vkCmdEndRenderPass(command_buffer);
+
+        {
+            VkResult result = vkEndCommandBuffer(command_buffer);
+            if (result != VK_SUCCESS) {
+                Log::error("Failed to record command buffer, result: ", result);
+                return false;
+            }
+        }
+    }
+
+    // Semaphores
+    _image_available_semaphore = create_semaphore(_device);
+    _render_finished_semaphore = create_semaphore(_device);
+
+    if(_image_available_semaphore == VK_NULL_HANDLE || _render_finished_semaphore == VK_NULL_HANDLE)
+        return false;
+
     return true;
 }
 
+bool VulkanDriver::draw() {
+
+    // Acquire image
+
+    uint32_t image_index;
+    vkAcquireNextImageKHR(_device, _swap_chain, 0xffffffffffffffff, _image_available_semaphore, VK_NULL_HANDLE, &image_index);
+
+    // Submit commands
+
+    VkSubmitInfo submit_info = {};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore submit_wait_semaphores[] = { _image_available_semaphore };
+    VkSemaphore submit_signal_semaphores[] = { _render_finished_semaphore };
+
+    VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = submit_wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stages;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &_command_buffers[image_index];
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = submit_signal_semaphores;
+
+    {
+        VkResult result = vkQueueSubmit(_graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+        if (result != VK_SUCCESS) {
+            Log::error("Failed to submit queue, result: ", result);
+            return false;
+        }
+    }
+
+    // Present
+
+    VkPresentInfoKHR present_info = {};
+    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = submit_signal_semaphores;
+    VkSwapchainKHR swap_chains[] = { _swap_chain };
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = swap_chains;
+    present_info.pImageIndices = &image_index;
+    present_info.pResults = nullptr; // Optional
+
+    {
+        VkResult result = vkQueuePresentKHR(_present_queue, &present_info);
+        if (result != VK_SUCCESS) {
+            Log::error("Failed to present, result: ", result);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void VulkanDriver::wait() {
+    vkDeviceWaitIdle(_device);
+}
 
 
 
