@@ -6,14 +6,14 @@
 // How many frames can be processed concurrently
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
-/*#define CHECK_RESULT_V(f, v) \
+#define CHECK_RESULT_V(f, v) \
 { \
     VkResult result = f; \
     if (result != VK_SUCCESS) { \
-        Log::error(__FILE__, ": ", __LINE__, ": Vulkan call failed with result ", result); \
+        Log::error(__FILE__, ": ", __LINE__, ": `", #f, "`: failed with result ", result); \
         return v; \
     } \
-}*/
+}
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
@@ -68,16 +68,9 @@ static bool contains_all_extensions(const Vector<VkExtensionProperties> &extensi
 
 static VkSemaphore create_semaphore(VkDevice device) {
     VkSemaphore semaphore = VK_NULL_HANDLE;
-
     VkSemaphoreCreateInfo create_info = {};
     create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-    VkResult result = vkCreateSemaphore(device, &create_info, nullptr, &semaphore);
-    if(result != VK_SUCCESS) {
-        Log::error("Failed to create semaphore, result: ", result);
-        return VK_NULL_HANDLE;
-    }
-
+    CHECK_RESULT_V(vkCreateSemaphore(device, &create_info, nullptr, &semaphore), VK_NULL_HANDLE);
     return semaphore;
 }
 
@@ -89,12 +82,7 @@ static VkFence create_fence(VkDevice device, bool signaled) {
     if (signaled)
         create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    VkResult result = vkCreateFence(device, &create_info, nullptr, &fence);
-    if(result != VK_SUCCESS) {
-        Log::error("Failed to create fence, result: ", result);
-        return VK_NULL_HANDLE;
-    }
-
+    CHECK_RESULT_V(vkCreateFence(device, &create_info, nullptr, &fence), VK_NULL_HANDLE);
     return fence;
 }
 
@@ -284,11 +272,7 @@ bool VulkanDriver::create(const char *app_name,
         create_info.enabledLayerCount = required_layers.size();
         create_info.ppEnabledLayerNames = required_layers.is_empty() ? nullptr : required_layers.data();
 
-        VkResult result = vkCreateInstance(&create_info, nullptr, &_instance);
-        if (result != VK_SUCCESS) {
-            Log::error(L"Failed to create Vulkan instance: result ", result);
-            return false;
-        }
+        CHECK_RESULT_V(vkCreateInstance(&create_info, nullptr, &_instance), false);
     }
 
 #if DEBUG
@@ -323,13 +307,7 @@ bool VulkanDriver::create(const char *app_name,
 #endif
 
     // Create main surface
-    {
-        VkResult result = window.create_vulkan_surface(_instance, nullptr, &_surface);
-        if(result != VK_SUCCESS) {
-            Log::error(L"Failed to create Vulkan surface: result ", result);
-            return false;
-        }
-    }
+    CHECK_RESULT_V(window.create_vulkan_surface(_instance, nullptr, &_surface), false);
 
     struct QueueFamilyIndices {
         int graphics = -1;
@@ -491,11 +469,7 @@ bool VulkanDriver::create(const char *app_name,
         create_info.enabledExtensionCount = static_cast<uint32_t>(required_device_extensions.size());
         create_info.ppEnabledExtensionNames = required_device_extensions.data();
 
-        VkResult result = vkCreateDevice(physical_device, &create_info, nullptr, &_device);
-        if (result != VK_SUCCESS) {
-            Log::error(L"Failed to create Vulkan device: result ", result);
-            return false;
-        }
+        CHECK_RESULT_V(vkCreateDevice(physical_device, &create_info, nullptr, &_device), false);
     }
 
     vkGetDeviceQueue(_device, queue_family_indices.graphics, 0, &_graphics_queue);
@@ -581,11 +555,7 @@ bool VulkanDriver::create(const char *app_name,
             create_info.clipped = VK_TRUE; // Don't care about pixels behind other windows
             create_info.oldSwapchain = VK_NULL_HANDLE;
 
-            VkResult result = vkCreateSwapchainKHR(_device, &create_info, nullptr, &_swap_chain);
-            if (result != VK_SUCCESS) {
-                Log::error("Could not create Vulkan swap chain, result: ", result);
-                return false;
-            }
+            CHECK_RESULT_V(vkCreateSwapchainKHR(_device, &create_info, nullptr, &_swap_chain), false);
         }
 
         vkGetSwapchainImagesKHR(_device, _swap_chain, &image_count, nullptr);
@@ -613,11 +583,7 @@ bool VulkanDriver::create(const char *app_name,
             create_info.subresourceRange.baseArrayLayer = 0;
             create_info.subresourceRange.layerCount = 1;
 
-            VkResult result = vkCreateImageView(_device, &create_info, nullptr, &_swap_chain_image_views[i]);
-            if (result != VK_SUCCESS) {
-                Log::error("Failed to create Vulkan swap chain image view, result: ", result);
-                return false;
-            }
+            CHECK_RESULT_V(vkCreateImageView(_device, &create_info, nullptr, &_swap_chain_image_views[i]), false);
         }
     }
 
@@ -666,11 +632,7 @@ bool VulkanDriver::create(const char *app_name,
         create_info.dependencyCount = 1;
         create_info.pDependencies = &dependency;
 
-        VkResult result = vkCreateRenderPass(_device, &create_info, nullptr, &_render_pass);
-        if (result != VK_SUCCESS) {
-            Log::error("Could not create render pass: ", result);
-            return false;
-        }
+        CHECK_RESULT_V(vkCreateRenderPass(_device, &create_info, nullptr, &_render_pass), false);
     }
 
     // Create pipeline
@@ -699,11 +661,7 @@ bool VulkanDriver::create(const char *app_name,
             create_info.codeSize = vert_shader_code.size();
             create_info.pCode = reinterpret_cast<const uint32_t*>(vert_shader_code.data());
 
-            VkResult result = vkCreateShaderModule(_device, &create_info, nullptr, &vert_shader_module);
-            if (result != VK_SUCCESS) {
-                Log::error("Could not create shader module");
-                return false;
-            }
+            CHECK_RESULT_V(vkCreateShaderModule(_device, &create_info, nullptr, &vert_shader_module), false);
         }
         VkShaderModule frag_shader_module = VK_NULL_HANDLE;
         {
@@ -712,11 +670,7 @@ bool VulkanDriver::create(const char *app_name,
             create_info.codeSize = frag_shader_code.size();
             create_info.pCode = reinterpret_cast<const uint32_t*>(frag_shader_code.data());
 
-            VkResult result = vkCreateShaderModule(_device, &create_info, nullptr, &frag_shader_module);
-            if (result != VK_SUCCESS) {
-                Log::error("Could not create shader module");
-                return false;
-            }
+            CHECK_RESULT_V(vkCreateShaderModule(_device, &create_info, nullptr, &frag_shader_module), false);
         }
 
         struct AutoDestroyShaderModule {
@@ -852,11 +806,7 @@ bool VulkanDriver::create(const char *app_name,
             create_info.pushConstantRangeCount = 0; // Optional
             create_info.pPushConstantRanges = nullptr; // Optional
 
-            VkResult result = vkCreatePipelineLayout(_device, &create_info, nullptr, &_pipeline_layout);
-            if (result != VK_SUCCESS) {
-                Log::error("Could not create pipeline layout: ", result);
-                return false;
-            }
+            CHECK_RESULT_V(vkCreatePipelineLayout(_device, &create_info, nullptr, &_pipeline_layout), false);
         }
 
         {
@@ -878,11 +828,7 @@ bool VulkanDriver::create(const char *app_name,
             create_info.basePipelineHandle = VK_NULL_HANDLE; // Optional
             create_info.basePipelineIndex = -1; // Optional
 
-            VkResult result = vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &create_info, nullptr, &_graphics_pipeline);
-            if (result != VK_SUCCESS) {
-                Log::error("Could not create graphics pipeline, result: ", result);
-                return false;
-            }
+            CHECK_RESULT_V(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &create_info, nullptr, &_graphics_pipeline), false);
         }
 
         //...
@@ -910,11 +856,7 @@ bool VulkanDriver::create(const char *app_name,
             create_info.height = _swap_chain_extent.height;
             create_info.layers = 1;
 
-            VkResult result = vkCreateFramebuffer(_device, &create_info, nullptr, &_swap_chain_framebuffers[i]);
-            if (result != VK_SUCCESS) {
-                Log::error("Failed to create framebuffer, result: ", result);
-                return false;
-            }
+            CHECK_RESULT_V(vkCreateFramebuffer(_device, &create_info, nullptr, &_swap_chain_framebuffers[i]), false);
         }
     }
 
@@ -925,11 +867,7 @@ bool VulkanDriver::create(const char *app_name,
         create_info.queueFamilyIndex = queue_family_indices.graphics;
         create_info.flags = 0; // Optional
 
-        VkResult result = vkCreateCommandPool(_device, &create_info, nullptr, &_command_pool);
-        if (result != VK_SUCCESS) {
-            Log::error("Could not create command pool, result: ", result);
-            return false;
-        }
+        CHECK_RESULT_V(vkCreateCommandPool(_device, &create_info, nullptr, &_command_pool), false);
     }
     {
         _command_buffers.resize(_swap_chain_framebuffers.size(), VK_NULL_HANDLE);
@@ -940,11 +878,7 @@ bool VulkanDriver::create(const char *app_name,
         alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         alloc_info.commandBufferCount = (uint32_t) _command_buffers.size();
 
-        VkResult result = vkAllocateCommandBuffers(_device, &alloc_info, _command_buffers.data());
-        if (result != VK_SUCCESS) {
-            Log::error("Could not allocate command buffers, result: ", result);
-            return false;
-        }
+        CHECK_RESULT_V(vkAllocateCommandBuffers(_device, &alloc_info, _command_buffers.data()), false);
     }
     for (size_t i = 0; i < _command_buffers.size(); ++i) {
 
@@ -955,13 +889,7 @@ bool VulkanDriver::create(const char *app_name,
         begin_info.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         begin_info.pInheritanceInfo = nullptr; // Optional
 
-        {
-            VkResult result = vkBeginCommandBuffer(command_buffer, &begin_info);
-            if (result != VK_SUCCESS) {
-                Log::error("Failed to start recording command buffer, result: ", result);
-                return false;
-            }
-        }
+        CHECK_RESULT_V(vkBeginCommandBuffer(command_buffer, &begin_info), false);
 
         VkRenderPassBeginInfo pass_info = {};
         pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -978,13 +906,7 @@ bool VulkanDriver::create(const char *app_name,
         vkCmdDraw(command_buffer, 3, 1, 0, 0);
         vkCmdEndRenderPass(command_buffer);
 
-        {
-            VkResult result = vkEndCommandBuffer(command_buffer);
-            if (result != VK_SUCCESS) {
-                Log::error("Failed to record command buffer, result: ", result);
-                return false;
-            }
-        }
+        CHECK_RESULT_V(vkEndCommandBuffer(command_buffer), false);
     }
 
     // Semaphores
@@ -1038,14 +960,8 @@ bool VulkanDriver::draw() {
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = submit_signal_semaphores;
 
-    {
-        // Note: we use a fence which will be signaled when the command buffers finish to execute
-        VkResult result = vkQueueSubmit(_graphics_queue, 1, &submit_info, _in_flight_fences[_current_frame]);
-        if (result != VK_SUCCESS) {
-            Log::error("Failed to submit queue, result: ", result);
-            return false;
-        }
-    }
+    // Note: we use a fence which will be signaled when the command buffers finish to execute
+    CHECK_RESULT_V(vkQueueSubmit(_graphics_queue, 1, &submit_info, _in_flight_fences[_current_frame]), false);
 
     // Present
 
@@ -1059,13 +975,7 @@ bool VulkanDriver::draw() {
     present_info.pImageIndices = &image_index;
     present_info.pResults = nullptr; // Optional
 
-    {
-        VkResult result = vkQueuePresentKHR(_present_queue, &present_info);
-        if (result != VK_SUCCESS) {
-            Log::error("Failed to present, result: ", result);
-            return false;
-        }
-    }
+    CHECK_RESULT_V(vkQueuePresentKHR(_present_queue, &present_info), false);
 
     _current_frame = (_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 
