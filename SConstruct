@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import subprocess
 
 # `scons p=linux` to compile for linux
 # `scons p=windows` to compile for windows
@@ -11,6 +12,9 @@ import os
 project_name = "vulkan_tutorial"
 output_folder = "bin/"
 
+# TODO Platform-independent Vulkan SDK path
+vulkan_sdk_dir = "C:/VulkanSDK/1.1.82.1/"
+
 #------------------------------------------------------------------------------
 env = Environment()
 
@@ -19,6 +23,23 @@ if ARGUMENTS.get('use_llvm', 'no') == 'yes':
 
 target = ARGUMENTS.get('target', 'release')
 platform = ARGUMENTS.get('p', 'windows')
+
+#------------------------------------------------------------------------------
+if ARGUMENTS.get('compile_shaders', 'no') == 'yes':
+
+	def compile_shaders():
+		# TODO Platform-independent shader compilation
+		compiler_path = os.path.join(vulkan_sdk_dir, "Bin32/glslangValidator.exe")
+		shaders = [
+			"shaders/default.frag",
+			"shaders/default.vert"
+		]
+		for shader in shaders:
+			print("Compiling shader ", shader)
+			target_path = os.path.join(output_folder, os.path.basename(shader) + '.spv')
+			subprocess.call([compiler_path, '-V', shader, '-o', target_path])
+
+	compile_shaders()
 
 #------------------------------------------------------------------------------
 #env['TARGET_ARCH'] = 'x86_64'
@@ -52,11 +73,10 @@ elif platform == 'windows':
 
 	env.Append(LIBPATH = [
 		"thirdparty/glfw/lib-vc2015",
-		"C:/VulkanSDK/1.1.82.1/Lib"
+		os.path.join(vulkan_sdk_dir, "Lib")
 	])
 	env.Append(CPPPATH = [
-		# TODO Independent Vulkan SDK path (embed in project?)
-		"C:/VulkanSDK/1.1.82.1/Include"
+		os.path.join(vulkan_sdk_dir, "Include")
 	])
 	# This is needed if you statically link GLFW
 	# env.Append(LIBS = [
