@@ -43,8 +43,13 @@ private:
     VkCommandPool _command_pool;
     Vector<VkCommandBuffer> _command_buffers;
 
-    VkSemaphore _image_available_semaphore;
-    VkSemaphore _render_finished_semaphore;
+    // One for each in-flight image
+    Vector<VkSemaphore> _image_available_semaphores;
+    Vector<VkSemaphore> _render_finished_semaphores;
+    Vector<VkFence> _in_flight_fences;
+    uint32_t _current_frame;
 };
 
 #endif // HEADER_VULKAN_DRIVER_H
+
+

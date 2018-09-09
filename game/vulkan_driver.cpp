@@ -3,6 +3,9 @@
 #include "core/file.h"
 #include "window.h"
 
+// How many frames can be processed concurrently
+const int MAX_FRAMES_IN_FLIGHT = 2;
+
 /*#define CHECK_RESULT_V(f, v) \
 { \
     VkResult result = f; \
@@ -78,6 +81,23 @@ static VkSemaphore create_semaphore(VkDevice device) {
     return semaphore;
 }
 
+static VkFence create_fence(VkDevice device, bool signaled) {
+    VkFence fence = VK_NULL_HANDLE;
+
+    VkFenceCreateInfo create_info = {};
+    create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    if (signaled)
+        create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    VkResult result = vkCreateFence(device, &create_info, nullptr, &fence);
+    if(result != VK_SUCCESS) {
+        Log::error("Failed to create fence, result: ", result);
+        return VK_NULL_HANDLE;
+    }
+
+    return fence;
+}
+
 VulkanDriver::VulkanDriver() {
 
     _instance = VK_NULL_HANDLE;
@@ -95,13 +115,12 @@ VulkanDriver::VulkanDriver() {
     _graphics_pipeline = VK_NULL_HANDLE;
 
     _command_pool = VK_NULL_HANDLE;
-
-    _image_available_semaphore = VK_NULL_HANDLE;
-    _render_finished_semaphore = VK_NULL_HANDLE;
 }
 
 VulkanDriver::~VulkanDriver() {
     if(_instance) {
+
+        wait();
 
         if(_command_pool) {
             vkDestroyCommandPool(_device, _command_pool, nullptr);
@@ -137,11 +156,20 @@ VulkanDriver::~VulkanDriver() {
             vkDestroySwapchainKHR(_device, _swap_chain, nullptr);
         }
 
-        if(_render_finished_semaphore) {
-            vkDestroySemaphore(_device, _render_finished_semaphore, nullptr);
+        for (int i = 0; i < _render_finished_semaphores.size(); ++i) {
+            if(_render_finished_semaphores[i]) {
+                vkDestroySemaphore(_device, _render_finished_semaphores[i], nullptr);
+            }
         }
-        if(_image_available_semaphore) {
-            vkDestroySemaphore(_device, _image_available_semaphore, nullptr);
+        for (int i = 0; i < _image_available_semaphores.size(); ++i) {
+            if(_image_available_semaphores[i]) {
+                vkDestroySemaphore(_device, _image_available_semaphores[i], nullptr);
+            }
+        }
+        for (int i = 0; i < _in_flight_fences.size(); ++i) {
+            if(_in_flight_fences[i]) {
+                vkDestroyFence(_device, _in_flight_fences[i], nullptr);
+            }
         }
 
         if(_device) {
@@ -167,6 +195,8 @@ bool VulkanDriver::create(const char *app_name,
     Vector<const char*> required_extensions,
     Vector<const char*> required_layers,
     Window &window) {
+
+    assert(_instance == VK_NULL_HANDLE);
 
 #if DEBUG
     // Check validation layers
@@ -958,29 +988,46 @@ bool VulkanDriver::create(const char *app_name,
     }
 
     // Semaphores
-    _image_available_semaphore = create_semaphore(_device);
-    _render_finished_semaphore = create_semaphore(_device);
 
-    if(_image_available_semaphore == VK_NULL_HANDLE || _render_finished_semaphore == VK_NULL_HANDLE)
-        return false;
+    _image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
+    _render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
+    _in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        _image_available_semaphores[i] = create_semaphore(_device);
+        _render_finished_semaphores[i] = create_semaphore(_device);
+
+        // Note: we create those fences in a signaled state to avoid a deadlock when rendering our first frame,
+        // because they are created in unsignaled state by default
+        _in_flight_fences[i] = create_fence(_device, true);
+
+        if(_image_available_semaphores[i] == VK_NULL_HANDLE || _render_finished_semaphores[i] == VK_NULL_HANDLE || _in_flight_fences[i] == VK_NULL_HANDLE)
+            return false;
+    }
 
     return true;
 }
 
 bool VulkanDriver::draw() {
 
+    const uint64_t max_uint64 = 0xffffffffffffffff;
+
+    // Wait in case the current frame is still rendering
+    vkWaitForFences(_device, 1, &_in_flight_fences[_current_frame], VK_TRUE, max_uint64);
+    vkResetFences(_device, 1, &_in_flight_fences[_current_frame]);
+
     // Acquire image
 
     uint32_t image_index;
-    vkAcquireNextImageKHR(_device, _swap_chain, 0xffffffffffffffff, _image_available_semaphore, VK_NULL_HANDLE, &image_index);
+    vkAcquireNextImageKHR(_device, _swap_chain, max_uint64, _image_available_semaphores[_current_frame], VK_NULL_HANDLE, &image_index);
 
     // Submit commands
 
     VkSubmitInfo submit_info = {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore submit_wait_semaphores[] = { _image_available_semaphore };
-    VkSemaphore submit_signal_semaphores[] = { _render_finished_semaphore };
+    VkSemaphore submit_wait_semaphores[] = { _image_available_semaphores[_current_frame] };
+    VkSemaphore submit_signal_semaphores[] = { _render_finished_semaphores[_current_frame] };
 
     VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
     submit_info.waitSemaphoreCount = 1;
@@ -992,7 +1039,8 @@ bool VulkanDriver::draw() {
     submit_info.pSignalSemaphores = submit_signal_semaphores;
 
     {
-        VkResult result = vkQueueSubmit(_graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+        // Note: we use a fence which will be signaled when the command buffers finish to execute
+        VkResult result = vkQueueSubmit(_graphics_queue, 1, &submit_info, _in_flight_fences[_current_frame]);
         if (result != VK_SUCCESS) {
             Log::error("Failed to submit queue, result: ", result);
             return false;
@@ -1018,6 +1066,8 @@ bool VulkanDriver::draw() {
             return false;
         }
     }
+
+    _current_frame = (_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 
     return true;
 }

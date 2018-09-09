@@ -31,8 +31,15 @@ int main_loop() {
     }
 
     while (!window.should_close()) {
+
         Window::poll_events();
-        driver.draw();
+
+        if(!driver.draw()) {
+            // If something wrong happens in rendering, don't bail-loop forever
+            break;
+        }
+
+        // TODO Limit framerate, maybeee
     }
 
     driver.wait();
