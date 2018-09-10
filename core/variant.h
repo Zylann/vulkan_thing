@@ -5,7 +5,7 @@
 
 struct TaggedPointer {
     void *ptr;
-    size_t tag;
+    void *tag;
 };
 
 class Variant {

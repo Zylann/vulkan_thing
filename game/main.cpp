@@ -10,7 +10,7 @@ int main() {
 
     int ret = main_loop();
 
-    Log::info(L"Alloc count on exit: ", Memory::get_alloc_count());
+    Log::info(L"Alloc count on exit: ", (int64_t)Memory::get_alloc_count());
 
     return ret;
 }
@@ -34,9 +34,22 @@ int main_loop() {
 
         Window::poll_events();
 
-        if(!driver.draw()) {
-            // If something wrong happens in rendering, don't bail-loop forever
-            break;
+        InputEvent event;
+        while (window.pop_event(event)) {
+
+            if(event.type == InputEvent::FRAMEBUFFER_RESIZED) {
+                // Workaround for some drivers not returning VK_ERROR_OUT_OF_DATE_KHR on resize
+                driver.schedule_resize();
+            }
+        }
+
+        // Don't draw in minimized state, framebuffer size is zero
+        if (window.get_framebuffer_size() != Vector2i()) {
+
+            if (!driver.draw(window)) {
+                // If something wrong happens in rendering, don't bail-loop forever
+                break;
+            }
         }
 
         // TODO Limit framerate, maybeee

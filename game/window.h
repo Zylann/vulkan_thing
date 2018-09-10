@@ -7,6 +7,16 @@
 #include "core/math/vector2.h"
 #include "core/vector.h"
 
+struct InputEvent {
+
+    enum Type {
+        FRAMEBUFFER_RESIZED
+    };
+
+    Type type;
+    Vector2i size;
+};
+
 class Window {
 public:
 
@@ -20,11 +30,17 @@ public:
     static void poll_events();
     static void get_required_vulkan_extensions(Vector<const char*> &out_required_extensions);
 
-    Vector2i get_size() const { return _size; }
+    bool pop_event(InputEvent &out_event);
+    void push_event(InputEvent event);
+
+    Vector2i get_client_size() const;
+    Vector2i get_framebuffer_size() const;
 
 private:
     GLFWwindow* _window;
     Vector2i _size;
+
+    Vector<InputEvent> _events;
 };
 
 #endif // HEADER_WINDOW_H

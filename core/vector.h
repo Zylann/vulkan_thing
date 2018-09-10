@@ -192,12 +192,29 @@ public:
         // because the reference could be coming from the same storage
 
         if (m_size == m_capacity) {
-            resize_capacity(m_capacity + (m_capacity / 2) + 1);
+            increment_capacity();
         }
 
         T *d = data();
 
         new(&d[m_size]) T(p_value);
+
+        ++m_size;
+    }
+
+    void push_front(const T p_value) {
+
+        if (m_size == m_capacity) {
+            increment_capacity();
+        }
+
+        T *d = data();
+
+        for (size_t i = size(); i > 0; --i) {
+            d[i] = d[i - 1];
+        }
+
+        new(&d[0]) T(p_value);
 
         ++m_size;
     }
@@ -293,6 +310,10 @@ public:
     }
 
 private:
+    void increment_capacity() {
+        resize_capacity(m_capacity + (m_capacity / 2) + 1);
+    }
+
     void resize_capacity(size_t p_capacity) {
         // memcpy is used because we only move data.
         // In the worst case, pointers to elements themselves will be invalid,

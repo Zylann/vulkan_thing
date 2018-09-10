@@ -23,6 +23,8 @@ public:
     //String(const String &other);
     String(const Char *p_cstr);
 
+    String &String::operator+=(const char p_cstr);
+    String &String::operator+=(const Char p_cstr);
     String &String::operator+=(const char *p_cstr);
     String &String::operator+=(const Char *p_cstr);
     String &String::operator+=(const String &p_other);
@@ -107,7 +109,19 @@ inline void to_string(String &dst, const String &s) {
 
 void append_int(String &p_dst, int64_t p_num, int base = 10, bool capitalize_hex = false);
 
+inline void to_string(String &dst, char p_char) {
+    dst += p_char;
+}
+
+inline void to_string(String &dst, Char p_char) {
+    dst += p_char;
+}
+
 inline void to_string(String &dst, int64_t p_num) {
+    append_int(dst, p_num);
+}
+
+inline void to_string(String &dst, int p_num) {
     append_int(dst, p_num);
 }
 

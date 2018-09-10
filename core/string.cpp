@@ -13,6 +13,19 @@ String::String(const Char *p_cstr) {
     memcpy(d, p_cstr, len * sizeof(Char));
 }
 
+String &String::operator+=(const char p_char) {
+    *this += (Char)p_char;
+    return *this;
+}
+
+String &String::operator+=(const Char p_char) {
+    size_t i = length();
+    push_back(0);
+    Char *d = data();
+    d[i] = p_char;
+    return *this;
+}
+
 String &String::operator+=(const char *p_cstr) {
 
     size_t begin = length();
