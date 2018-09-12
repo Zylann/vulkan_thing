@@ -359,4 +359,9 @@ private:
 
 };
 
+template <typename T>
+inline size_t size_in_bytes(const Vector<T> &v) {
+    return v.size() * sizeof(T);
+}
+
 #endif // HEADER_VECTOR_H

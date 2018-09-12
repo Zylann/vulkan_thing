@@ -1,6 +1,8 @@
 #include "window.h"
-#include "core/log.h"
+#include "core/macros.h"
 #include "vulkan_driver.h"
+#include "core/math/vector3.h"
+#include "mesh.h"
 
 int main_loop();
 
@@ -26,9 +28,15 @@ int main_loop() {
     Vector<const char*> required_layers;
 
     VulkanDriver driver;
-    if (!driver.create(app_name, required_extensions, required_layers, window)) {
-        return EXIT_FAILURE;
-    }
+    ERR_FAIL_COND_V(!driver.create(app_name, required_extensions, required_layers, window), EXIT_FAILURE);
+
+    Mesh *mesh = new Mesh();
+    mesh->make_triangle();
+    mesh->upload(driver);
+
+    driver.scene.push_back(mesh);
+
+    driver.create_command_buffers();
 
     while (!window.should_close()) {
 
@@ -41,6 +49,9 @@ int main_loop() {
                 // Workaround for some drivers not returning VK_ERROR_OUT_OF_DATE_KHR on resize
                 driver.schedule_resize();
             }
+
+            // TODO Repaint while resizing?
+            // https://stackoverflow.com/questions/45880238/how-to-draw-while-resizing-glfw-window
         }
 
         // Don't draw in minimized state, framebuffer size is zero

@@ -1,6 +1,9 @@
 core/file.cpp
 core/file.h
 core/log.cpp
+core/macros.h
+game/mesh.cpp
+game/mesh.h
 game/vulkan_driver.cpp
 game/vulkan_driver.h
 game/window.cpp

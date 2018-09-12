@@ -1,19 +1,11 @@
 #include "vulkan_driver.h"
-#include "core/log.h"
+#include "core/macros.h"
 #include "core/file.h"
 #include "window.h"
+#include "mesh.h"
 
 // How many frames can be processed concurrently
 const int MAX_FRAMES_IN_FLIGHT = 2;
-
-#define CHECK_RESULT_V(f, v) \
-{ \
-    VkResult result = f; \
-    if (result != VK_SUCCESS) { \
-        Log::error(__FILE__, ": ", __LINE__, ": `", #f, "`: failed with result ", result); \
-        return v; \
-    } \
-}
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
@@ -114,6 +106,11 @@ VulkanDriver::~VulkanDriver() {
     if(_instance) {
 
         wait();
+
+        for(int i = 0; i < scene.size(); ++i) {
+            delete scene[i];
+        }
+        scene.clear();
 
         clear_swap_chain();
 
@@ -220,9 +217,7 @@ bool VulkanDriver::create(const char *app_name,
         }
         Console::print_line();
 
-        if(!contains_all_extensions(extensions, required_extensions, true)) {
-            return false;
-        }
+        ERR_FAIL_COND_V(!contains_all_extensions(extensions, required_extensions, true), false);
     }
 
     // List layers
@@ -445,8 +440,7 @@ bool VulkanDriver::create(const char *app_name,
     vkGetDeviceQueue(_device, _queue_family_indices.graphics, 0, &_graphics_queue);
     vkGetDeviceQueue(_device, _queue_family_indices.presentation, 0, &_present_queue);
 
-    if (!create_view(window))
-        return false;
+    ERR_FAIL_COND_V(!create_view(window), false);
 
     // Synchronization
 
@@ -482,10 +476,13 @@ bool VulkanDriver::resize(const Window &window) {
 
     _scheduled_resize = false;
 
-    return create_view(window);
+    ERR_FAIL_COND_V(!create_view(window), false);
+
+    return create_command_buffers();
 }
 
 void VulkanDriver::clear_swap_chain() {
+    // Clear the swap chain and everything depending on it
 
     for(int i = 0; i < _swap_chain_framebuffers.size(); ++i) {
         VkFramebuffer fb = _swap_chain_framebuffers[i];
@@ -777,12 +774,15 @@ bool VulkanDriver::create_pipeline() {
     // Fixed stages
 
     VkPipelineVertexInputStateCreateInfo vertex_input_info = {};
+    Vector<VkVertexInputBindingDescription> vertex_bindings;
+    Vector<VkVertexInputAttributeDescription> vertex_attributes;
+    Mesh::get_description(vertex_bindings, vertex_attributes);
+
     vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    // No mesh to draw yet
-    vertex_input_info.vertexBindingDescriptionCount = 0;
-    vertex_input_info.pVertexBindingDescriptions = nullptr; // Optional
-    vertex_input_info.vertexAttributeDescriptionCount = 0;
-    vertex_input_info.pVertexAttributeDescriptions = nullptr; // Optional
+    vertex_input_info.vertexBindingDescriptionCount = vertex_bindings.size();
+    vertex_input_info.pVertexBindingDescriptions = vertex_bindings.data();
+    vertex_input_info.vertexAttributeDescriptionCount = vertex_attributes.size();
+    vertex_input_info.pVertexAttributeDescriptions = vertex_attributes.data();
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly = {};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -939,6 +939,8 @@ bool VulkanDriver::create_framebuffers() {
 
 bool VulkanDriver::create_command_buffers() {
 
+    // TODO Support updating command buffers
+
     assert(_command_buffers.size() == 0);
     assert(_swap_chain_framebuffers.size() != 0);
 
@@ -987,7 +989,10 @@ bool VulkanDriver::create_command_buffers() {
 
         vkCmdBeginRenderPass(command_buffer, &pass_info, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _graphics_pipeline);
-        vkCmdDraw(command_buffer, 3, 1, 0, 0);
+
+        for(int i = 0; i < scene.size(); ++i)
+            scene[i]->draw(command_buffer);
+
         vkCmdEndRenderPass(command_buffer);
 
         CHECK_RESULT_V(vkEndCommandBuffer(command_buffer), false);
@@ -998,20 +1003,10 @@ bool VulkanDriver::create_command_buffers() {
 
 bool VulkanDriver::create_view(const Window &window) {
 
-    if (!create_swap_chain(window))
-        return false;
-
-    if (!create_render_pass())
-        return false;
-
-    if (!create_pipeline())
-        return false;
-
-    if (!create_framebuffers())
-        return false;
-
-    if (!create_command_buffers())
-        return false;
+    ERR_FAIL_COND_V(!create_swap_chain(window), false);
+    ERR_FAIL_COND_V(!create_render_pass(), false);
+    ERR_FAIL_COND_V(!create_pipeline(), false);
+    ERR_FAIL_COND_V(!create_framebuffers(), false);
 
     return true;
 }
@@ -1094,7 +1089,13 @@ void VulkanDriver::wait() {
     vkDeviceWaitIdle(_device);
 }
 
+VkDevice VulkanDriver::get_device() const {
+    return _device;
+}
 
+VkPhysicalDevice VulkanDriver::get_physical_device() const {
+    return _physical_device;
+}
 
 
 

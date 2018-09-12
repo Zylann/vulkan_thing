@@ -6,6 +6,7 @@
 #include "core/math/vector2.h"
 
 class Window;
+class Mesh;
 
 class VulkanDriver {
 public:
@@ -21,6 +22,14 @@ public:
     void schedule_resize();
 
     void wait();
+
+    // TODO Not sure yet about the architecture
+    Vector<Mesh*> scene;
+
+    bool create_command_buffers();
+
+    VkDevice get_device() const;
+    VkPhysicalDevice get_physical_device() const;
 
 private:
     bool resize(const Window &window);
@@ -40,7 +49,6 @@ private:
     bool create_render_pass();
     bool create_pipeline();
     bool create_framebuffers();
-    bool create_command_buffers();
 
     VkInstance _instance;
     VkDebugUtilsMessengerEXT _debug_messenger;
