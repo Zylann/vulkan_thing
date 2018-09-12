@@ -96,6 +96,7 @@ VulkanDriver::VulkanDriver() {
     _graphics_pipeline = VK_NULL_HANDLE;
 
     _command_pool = VK_NULL_HANDLE;
+    _short_lived_command_pool = VK_NULL_HANDLE;
 
     _current_frame = 0;
 
@@ -116,6 +117,9 @@ VulkanDriver::~VulkanDriver() {
 
         if(_command_pool) {
             vkDestroyCommandPool(_device, _command_pool, nullptr);
+        }
+        if(_short_lived_command_pool) {
+            vkDestroyCommandPool(_device, _short_lived_command_pool, nullptr);
         }
 
         for (int i = 0; i < _render_finished_semaphores.size(); ++i) {
@@ -1137,6 +1141,56 @@ bool VulkanDriver::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, Vk
     // Make one memory for all our buffers?
 
     CHECK_RESULT_V(vkBindBufferMemory(_device, buffer, buffer_memory, 0), false);
+
+    return true;
+}
+
+bool VulkanDriver::copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) {
+
+    if (_short_lived_command_pool == VK_NULL_HANDLE) {
+
+        // You may wish to create a separate command pool for these kinds of short-lived buffers,
+        // because the implementation may be able to apply memory allocation optimizations
+        VkCommandPoolCreateInfo create_info = {};
+        create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        create_info.queueFamilyIndex = _queue_family_indices.graphics;
+        create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+
+        CHECK_RESULT_V(vkCreateCommandPool(_device, &create_info, nullptr, &_short_lived_command_pool), false);
+    }
+
+    VkCommandBufferAllocateInfo alloc_info = {};
+    alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    alloc_info.commandPool = _short_lived_command_pool;
+    alloc_info.commandBufferCount = 1;
+
+    VkCommandBuffer command_buffer;
+    CHECK_RESULT_V(vkAllocateCommandBuffers(_device, &alloc_info, &command_buffer), false);
+
+    VkCommandBufferBeginInfo begin_info = {};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    CHECK_RESULT_V(vkBeginCommandBuffer(command_buffer, &begin_info), false);
+
+    VkBufferCopy copy_region = {};
+    copy_region.srcOffset = 0; // Optional
+    copy_region.dstOffset = 0; // Optional
+    copy_region.size = size;
+    vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
+
+    CHECK_RESULT_V(vkEndCommandBuffer(command_buffer), false);
+
+    VkSubmitInfo submit_info = {};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+    CHECK_RESULT_V(vkQueueSubmit(_graphics_queue, 1, &submit_info, VK_NULL_HANDLE), false);
+
+    // Note: we could also use a fence to upload multiple buffers simultaneously and wait for them at once
+    CHECK_RESULT_V(vkQueueWaitIdle(_graphics_queue), false);
+
+    vkFreeCommandBuffers(_device, _short_lived_command_pool, 1, &command_buffer);
 
     return true;
 }

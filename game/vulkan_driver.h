@@ -32,6 +32,7 @@ public:
     VkPhysicalDevice get_physical_device() const;
 
     bool create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& buffer_memory);
+    bool copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
 
 private:
     bool resize(const Window &window);
@@ -87,6 +88,7 @@ private:
     VkPipeline _graphics_pipeline;
 
     VkCommandPool _command_pool;
+    VkCommandPool _short_lived_command_pool;
     Vector<VkCommandBuffer> _command_buffers;
 
     // One for each in-flight image

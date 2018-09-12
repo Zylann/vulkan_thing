@@ -90,24 +90,39 @@ static bool copy_to(VkDevice device, const Vector<T> &src, VkDeviceMemory memory
     return true;
 }
 
+template <typename T>
+static bool upload_buffer(VulkanDriver &driver, const Vector<T> &data, VkBuffer &buffer, VkDeviceMemory &buffer_memory) {
+
+    VkDevice device = driver.get_device();
+
+    VkBuffer staging_buffer;
+    VkDeviceMemory staging_buffer_memory;
+    VkDeviceSize buffer_size = size_in_bytes(data);
+    VkMemoryPropertyFlags staging_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    ERR_FAIL_COND_V(!driver.create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging_flags, staging_buffer, staging_buffer_memory), false);
+
+    ERR_FAIL_COND_V(!copy_to(device, data, staging_buffer_memory), false);
+
+    VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    ERR_FAIL_COND_V(!driver.create_buffer(buffer_size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, buffer_memory), false);
+
+    driver.copy_buffer(staging_buffer, buffer, buffer_size);
+
+    vkDestroyBuffer(device, staging_buffer, nullptr);
+    vkFreeMemory(device, staging_buffer_memory, nullptr);
+
+    return true;
+}
+
 bool Mesh::upload(VulkanDriver &driver) {
 
     // TODO Handle subsequent uploads on mesh modification
     assert(_positions_buffer == VK_NULL_HANDLE);
 
     _driver = &driver;
-    VkDevice device = driver.get_device();
 
-    VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    VkBufferUsageFlags usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-
-    if(_positions_buffer == VK_NULL_HANDLE)
-        ERR_FAIL_COND_V(!driver.create_buffer(sizeof(Vector2) * get_vertex_count(), usage, flags, _positions_buffer, _positions_buffer_memory), false);
-    if(_colors_buffer == VK_NULL_HANDLE)
-        ERR_FAIL_COND_V(!driver.create_buffer(sizeof(Vector3) * get_vertex_count(), usage, flags, _colors_buffer, _colors_buffer_memory), false);
-
-    ERR_FAIL_COND_V(!copy_to(device, _positions, _positions_buffer_memory), false);
-    ERR_FAIL_COND_V(!copy_to(device, _colors, _colors_buffer_memory), false);
+    ERR_FAIL_COND_V(!upload_buffer(driver, _positions, _positions_buffer, _positions_buffer_memory), false);
+    ERR_FAIL_COND_V(!upload_buffer(driver, _colors, _colors_buffer, _colors_buffer_memory), false);
 
     return true;
 }
