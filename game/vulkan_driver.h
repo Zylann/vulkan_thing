@@ -31,6 +31,8 @@ public:
     VkDevice get_device() const;
     VkPhysicalDevice get_physical_device() const;
 
+    bool create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& buffer_memory);
+
 private:
     bool resize(const Window &window);
     bool create_view(const Window &window);

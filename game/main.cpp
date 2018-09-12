@@ -19,7 +19,6 @@ int main() {
 
 int main_loop() {
 
-    // TODO Handle resizeable window
     const char *app_name = "Vulkan test";
     Window window(Vector2i(800, 600), app_name);
 

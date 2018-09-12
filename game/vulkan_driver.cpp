@@ -1097,6 +1097,50 @@ VkPhysicalDevice VulkanDriver::get_physical_device() const {
     return _physical_device;
 }
 
+static bool find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties, uint32_t &out_memory_type) {
+
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+
+    for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
+        if ((type_filter & (1 << i)) && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+            out_memory_type = i;
+            return true;
+        }
+    }
+
+    Log::error("Could not find Vulkan memory type");
+    return false;
+}
+
+bool VulkanDriver::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& buffer_memory) {
+
+    VkBufferCreateInfo create_info = {};
+    create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    create_info.size = size;
+    create_info.usage = usage;
+    create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    CHECK_RESULT_V(vkCreateBuffer(_device, &create_info, nullptr, &buffer), false);
+
+    VkMemoryRequirements memory_requirements;
+    vkGetBufferMemoryRequirements(_device, buffer, &memory_requirements);
+
+    VkMemoryAllocateInfo alloc_info = {};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = memory_requirements.size;
+    ERR_FAIL_COND_V(!find_memory_type(_physical_device, memory_requirements.memoryTypeBits, properties, alloc_info.memoryTypeIndex), false);
+    CHECK_RESULT_V(vkAllocateMemory(_device, &alloc_info, nullptr, &buffer_memory), false);
+
+    // Note: if the offset is non-zero, then it is required to be divisible by memRequirements.alignment.
+    // Also we are limited to a few thousand buffers.
+    // Make one memory for all our buffers?
+
+    CHECK_RESULT_V(vkBindBufferMemory(_device, buffer, buffer_memory, 0), false);
+
+    return true;
+}
+
 
 
 
